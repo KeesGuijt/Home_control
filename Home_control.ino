@@ -74,7 +74,7 @@ unsigned int period;
 
 
 //////////////////////////////////////////////////////////////////////////////
-// Class definition
+// Class definitions
 
 class ClockHandler {    //"pre-declaration"
   public:
@@ -94,6 +94,25 @@ class ClockHandler {    //"pre-declaration"
   private:
     const int EEpromAddress;           // pin to which button is connected
     unsigned long pctime; 
+};
+
+class PinDeviceHandler {    //"pre-declaration"
+  public:
+    // Constructor
+    PinDeviceHandler(int o_pin, int EEpromAddress, unsigned long codeOn, unsigned long codeOff); 
+
+    // Initialization done after construction, to permit static instances
+    void init();
+      //read eeprom, set pin
+      
+    //by command, to be called in the loop()
+    void setByCommand(unsigned long command);
+
+  private:
+    const int EEpromAddress;           // pin to which button is connected
+    int outputPin; 
+    unsigned long codeForOn; 
+    unsigned long codeForOff; 
 };
 
 //#endif
@@ -125,7 +144,18 @@ void ClockHandler::init()
 
 int ClockHandler::handle()
 {
-  int event=0;
+     int event=0;
+
+    //every 30 min write to EEPROM to let clock survive resets by PC
+    if ( ( (minute() == 0) or (minute() == 30) ) and (second() <2) )   //only close to beginning of these minutes
+    {  
+      pctime=now();
+      //Put the float data from the EEPROM at position 'eeAddress'
+      eeAddress = 0;
+      EEPROM.put(EEpromAddress, pctime);
+      Serial.print("Timeinfo written to EEPROM.");
+      delay(2000);
+    } 
 
     if (HUISKAMER == 1)
     {
@@ -173,6 +203,114 @@ void ClockHandler::set(unsigned long p_time)
      }
 }
 
+
+PinDeviceHandler::PinDeviceHandler(int o_pin, int EEAddress, unsigned long codeOn, unsigned long codeOff)  //constructor definition
+:  outputPin(o_pin), EEpromAddress(EEAddress), codeForOn(codeOn), codeForOff(codeOff)
+{
+}
+
+void PinDeviceHandler::init()
+{
+  
+  //---( set pin as output )----  
+//  pinMode(outputPin, OUTPUT);   
+  
+  //get state from EEprom, set pin
+  unsigned long command=0;
+  //EEPROM.get(EEpromAddress, command);
+  //set command
+
+  //check for stored values
+  //for (int e=0;e<=8;e++)
+  //{
+    //EEPROM: TimeDate,ResetSupress,Relay0..7
+    //eeAddress += sizeof(unsigned long); //Move address to the next byte after time.
+    EEPROM.get(EEpromAddress, command);    
+    if ( (command >= 100) && (rfControlCode <= 881) )
+    {
+        Serial.print("Retrieved control command from EEPROM: ");
+        Serial.println(command);
+    }
+    else
+    {
+        command = 0;
+    }
+    
+    if ( command < 800 ) 
+    {
+            if ( command == codeForOn ) 
+            {
+               digitalWrite(outputPin, 1);// set the ResetSuppressPin ON
+               pinMode(outputPin, OUTPUT);  
+            }
+            if ( command == codeForOff ) 
+            {
+               pinMode(outputPin, INPUT);  //pulling the resetpin down is not a good idea....
+               Serial.print("Controlled ResetSuppressPin\n");
+            }
+    }
+    if ( (command >= 800) && (command <= 881) ) 
+    {
+           pinMode(outputPin, OUTPUT);   
+         
+           if ( command == codeForOn ) 
+            {
+               digitalWrite(outputPin, RELAY_ON);// set the Relay ON
+               Serial.print("Controlled relay\n");
+            }
+            if ( command == codeForOff ) 
+            {
+               digitalWrite(outputPin, RELAY_OFF);// set the Relay ON
+               Serial.print("Controlled relay\n");
+            }
+     }  
+  
+}
+
+void PinDeviceHandler::setByCommand(unsigned long command)
+{
+   if ( command < 800 ) 
+   {
+            if ( command == codeForOn ) 
+            {
+               digitalWrite(outputPin, 1);// set the ResetSuppressPin ON
+               pinMode(outputPin, OUTPUT);  
+               //EEpromAddress = sizeof(unsigned long); //Move address to the next byte after time.
+               EEPROM.put(EEpromAddress, command);
+               Serial.print("Written ResetSuppressPin state to EEPROM \n");
+            }
+            if ( command == codeForOff ) 
+            {
+               pinMode(outputPin, INPUT);  //pulling the resetpin down is not a good idea....
+               Serial.print("Controlled ResetSuppressPin\n");
+               //EEpromAddress = sizeof(unsigned long); //Move address to the next byte after time.
+               EEPROM.put(outputPin, command);
+               Serial.print("Written ResetSuppressPin state to EEPROM \n");
+            }
+   }
+   if ( (command >= 800) && (command <= 881) ) 
+   {
+            if ( command == codeForOn ) 
+            {
+               digitalWrite(outputPin, RELAY_ON);// set the Relay ON
+               Serial.print("Controlled relay\n");
+               //EEpromAddress = sizeof(unsigned long)*2; //Move address to the next byte after time.
+               EEPROM.put(EEpromAddress, command);
+               Serial.print("Written relay state to EEPROM \n");
+            }
+            if ( command == codeForOff ) 
+            {
+               digitalWrite(outputPin, RELAY_OFF);// set the Relay ON
+               Serial.print("Controlled relay\n");
+               //EEpromAddress = sizeof(unsigned long)*2; //Move address to the next byte after time.
+               EEPROM.put(EEpromAddress, command);
+               Serial.print("Written relay state to EEPROM \n");
+            }
+    }  
+
+}
+
+
 //end - This could be in a .cpp file
 
 
@@ -180,10 +318,10 @@ void ClockHandler::set(unsigned long p_time)
 //////////////////////////////////////////////////////////////////////////////
 
 // Instantiate objects
-// Instantiate clock object
-ClockHandler Myclock(0);
-//ClockHandler button2(BUTTON2_PIN, DEFAULT_LONGPRESS_LEN*2);
-
+ClockHandler Myclock(0); //first EEprom address
+PinDeviceHandler ResetSuppress(12,sizeof(unsigned long)*1,100,101);
+PinDeviceHandler Relay1(4,sizeof(unsigned long)*2,800,801);
+PinDeviceHandler Relay2(5,sizeof(unsigned long)*3,810,811);
 
 
 
@@ -196,7 +334,7 @@ void setup()  {
   // Transmitter is connected to Arduino Pin #2  
   mySwitch.enableTransmit(2);
 
-  /*//Get the time data from the EEPROM at position 'eeAddress'
+  /*//Get the time data from the EEPROM at position 'EEpromAddress'
   eeAddress = 0;
   EEPROM.get(eeAddress, pctime);
   if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
@@ -205,8 +343,11 @@ void setup()  {
   }
   */
   Myclock.init();
+  ResetSuppress.init();
+  Relay1.init();
+  Relay2.init();
 
-
+/*
   //---( set pins as outputs )----  
   pinMode(Relay_0, OUTPUT);   
   pinMode(Relay_1, OUTPUT);   
@@ -216,7 +357,7 @@ void setup()  {
   pinMode(Relay_5, OUTPUT);   
   pinMode(Relay_6, OUTPUT);  
   pinMode(Relay_7, OUTPUT);  
- 
+
   //check for stored values
   for (int e=0;e<=8;e++)
   {
@@ -269,7 +410,7 @@ void setup()  {
             rfControlCode=0;
         } 
   }
- 
+ */
   digitalClockDisplay();
   setSyncProvider( requestSync);  //set function to call when sync required
   Serial.println("Waiting for sync message");
@@ -301,6 +442,7 @@ void processSyncMessage() {
   //if(Serial.find(TIME_HEADER)) {
   if(Serial.find(*timeHeader)) {
      pctime = Serial.parseInt();
+    Serial.print("Received a control command ");
      
      /*
      if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
@@ -332,7 +474,8 @@ time_t requestSync()
 void loop() {
 
   rfControlCode = 0; 
- 
+  rfControlCode=Myclock.handle();   //get timed commands
+
   //check for time from pc or serial light control command
   if (Serial.available()) {
     processSyncMessage();
@@ -340,7 +483,9 @@ void loop() {
   
   if (timeStatus()!= timeNotSet) {
     digitalClockDisplay();  
-    /*
+ 
+  }
+  /*
     if (HUISKAMER == 1)
     {
           //check time, see if RF switch control is planned
@@ -374,9 +519,7 @@ void loop() {
           }
     }
     */
-    rfControlCode=Myclock.handle();   //get timed commands
-  }  
-    
+   /*  
   if ( (rfControlCode >= 100) && (rfControlCode <= 881) ) 
   {
           if ( (rfControlCode == 100) ) 
@@ -437,8 +580,24 @@ void loop() {
           }
           rfControlCode=0;
   }  
+*/
 
-  //send RF if needed
+  //set pin if needed
+  ResetSuppress.setByCommand(rfControlCode);
+  Relay1.setByCommand(rfControlCode);
+  Relay2.setByCommand(rfControlCode);
+  
+  //send IR if needed 
+  if ( (rfControlCode == 200) ) 
+  {
+     for (int i = 0; i < 3; i++) {
+          irsend.sendNEC(0x10EFA05F, 32); // Telefunken TV power code
+          delay(40);            
+      }
+     Serial.print("Written Power button to IR \n");
+  }
+
+  //set RF pulselength ans send if needed
   if ( rfControlCode > 881 ) 
   {
       if ( (rfControlCode >= SLAAPK_CHARGE_TX_AAN ) && (rfControlCode <= SLAAPK_CHARGE_LAPTOP_UIT ) )
@@ -467,6 +626,7 @@ void loop() {
   delay(500);
   digitalWrite(13, LOW);   // turn the LED off
 
+  /*
   //every 30 min write to EEPROM to let clock survive resets by PC
   if ( ( (minute() == 0) or (minute() == 30) ) and (second() <2) )   //only close to beginning of these minutes
   {  
@@ -477,4 +637,5 @@ void loop() {
     Serial.print("Timeinfo written to EEPROM.");
     delay(2000);
   } 
+  */
 }
