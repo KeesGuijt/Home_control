@@ -85,7 +85,7 @@ class ClockHandler {    //"pre-declaration"
     void init();
       //read eeprom, say time
       
-    void set();
+    void set(unsigned long p_time);
       //set time, write to eeprom, say time    
 
     // Handler, to be called in the loop()
@@ -113,9 +113,9 @@ ClockHandler::ClockHandler(int EEAddress)  //constructor definition
 
 void ClockHandler::init()
 {
-  //Get the time data from the EEPROM at position 'eeAddress'
+  //Get the time data from the EEPROM at position 'EEpromAddress'
   unsigned long pctime; 
-  //eeAddress = 0;
+  //EEpromAddress = 0;
   EEPROM.get(EEpromAddress, pctime);
   if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
        setTime(pctime); // Sync Arduino clock to the time received on the serial port
@@ -125,9 +125,52 @@ void ClockHandler::init()
 
 int ClockHandler::handle()
 {
-  int event;
+  int event=0;
 
-  return event;
+    if (HUISKAMER == 1)
+    {
+          //check time, see if RF switch control is planned
+          /*  times are calculated:
+          int(6.5-abs(month()-6.5)) 
+          jan 16
+          feb 17
+          mrt 18
+          apr 19
+          mei 20
+          jun 21
+          jul 21
+          aug 20
+          sep 19
+          okt 18
+          nov 17
+          dec 16
+          */
+          timeOn = TIME_HOUR_ON + int(6.5-abs(month()-6.5));
+          timeOff = TIME_HOUR_OFF;
+          Serial.println("On/Off times:");
+          Serial.println(timeOn);
+          Serial.println(timeOff);
+          if ( (hour() == timeOn) and (minute() == 0) and (second() < 5) ) 
+          {
+              event = HUISK_LAMP_KAST_AAN;
+          }
+          if ( (hour() == timeOff) and (minute() == 0) and (second() < 5) ) 
+          {  
+              event = HUISK_LAMP_KAST_UIT;
+          }
+    }
+    return event;
+}
+
+void ClockHandler::set(unsigned long p_time)
+{
+     if( p_time >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
+        setTime(pctime); // Sync Arduino clock to the time received on the serial port
+        //Put the float data from the EEPROM at position 'eeAddress'
+        //eeAddress = 0;
+        EEPROM.put(EEpromAddress, p_time);
+        Serial.println("Timeinfo from PC set and written to EEPROM.");
+     }
 }
 
 //end - This could be in a .cpp file
@@ -140,18 +183,6 @@ int ClockHandler::handle()
 // Instantiate clock object
 ClockHandler Myclock(0);
 //ClockHandler button2(BUTTON2_PIN, DEFAULT_LONGPRESS_LEN*2);
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -270,6 +301,8 @@ void processSyncMessage() {
   //if(Serial.find(TIME_HEADER)) {
   if(Serial.find(*timeHeader)) {
      pctime = Serial.parseInt();
+     
+     /*
      if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
         setTime(pctime); // Sync Arduino clock to the time received on the serial port
         //Put the float data from the EEPROM at position 'eeAddress'
@@ -283,6 +316,10 @@ void processSyncMessage() {
         Serial.print("Received a control command ");
         Serial.println(pctime);   
      }
+     */
+     Myclock.set(pctime);
+     rfControlCode = pctime;
+     
   }
 }
 
@@ -303,6 +340,7 @@ void loop() {
   
   if (timeStatus()!= timeNotSet) {
     digitalClockDisplay();  
+    /*
     if (HUISKAMER == 1)
     {
           //check time, see if RF switch control is planned
@@ -320,7 +358,7 @@ void loop() {
           okt 18
           nov 17
           dec 16
-          */
+          //
           timeOn = TIME_HOUR_ON + int(6.5-abs(month()-6.5));
           timeOff = TIME_HOUR_OFF;
           Serial.println("On/Off times:");
@@ -335,6 +373,8 @@ void loop() {
               rfControlCode = HUISK_LAMP_KAST_UIT;
           }
     }
+    */
+    rfControlCode=Myclock.handle();   //get timed commands
   }  
     
   if ( (rfControlCode >= 100) && (rfControlCode <= 881) ) 
