@@ -158,7 +158,6 @@ void ClockHandler::init()
 {
   //Get the time data from the EEPROM at position 'EEpromAddress'
   unsigned long pctime; 
-  //EEpromAddress = 0;
   EEPROM.get(EEpromAddress, pctime);
   if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
        setTime(pctime); // Sync Arduino clock to the time received on the serial port
@@ -220,7 +219,6 @@ void ClockHandler::set(unsigned long p_time)
      if( p_time >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
         setTime(pctime); // Sync Arduino clock to the time received on the serial port
         //Put the float data from the EEPROM at position 'eeAddress'
-        //eeAddress = 0;
         EEPROM.put(EEpromAddress, p_time);
         Serial.println("Timeinfo from PC set and written to EEPROM.");
      }
@@ -407,10 +405,6 @@ void setup()  {
   while (!Serial) ; // Needed for Leonardo only
   pinMode(13, OUTPUT);
 
-  //RcSwitch
-  // Transmitter is connected to Arduino Pin #2  
-  //mySwitch.enableTransmit(2);
-
   Myclock.init();
   ResetSuppress.init();
   Relay0.init();
@@ -449,7 +443,6 @@ void processSyncMessage() {
      pctime = Serial.parseInt();
      Myclock.set(pctime);
      rfControlCode = pctime;
-     
   }
 }
 
