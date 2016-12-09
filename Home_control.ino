@@ -27,15 +27,7 @@ const char *timeHeader = "T";// TIME_HEADER;
 #define TIME_HOUR_OFF  23  
 #define RELAY_ON 0
 #define RELAY_OFF 1
-#define Relay_0  4  // Arduino Digital I/O pin number
-#define Relay_1  5
-#define Relay_2  6
-#define Relay_3  7
-#define Relay_4  8  
-#define Relay_5  9
-#define Relay_6  10
-#define Relay_7  11
-#define ResetSuppressPin  12
+
 
 //Elro  4 button remote  - nieuwe settings    323ms
 //Dynamic energy tx, code 1410  177ms
@@ -396,6 +388,12 @@ ClockHandler Myclock(0); //first EEprom address
 PinDeviceHandler ResetSuppress(12,sizeof(unsigned long)*1,100,101);
 PinDeviceHandler Relay0(4,sizeof(unsigned long)*2,800,801);
 PinDeviceHandler Relay1(5,sizeof(unsigned long)*3,810,811);
+PinDeviceHandler Relay2(6,sizeof(unsigned long)*4,820,821);
+PinDeviceHandler Relay3(7,sizeof(unsigned long)*5,830,831);
+PinDeviceHandler Relay4(8,sizeof(unsigned long)*6,840,841);
+PinDeviceHandler Relay5(9,sizeof(unsigned long)*7,850,851);
+PinDeviceHandler Relay6(10,sizeof(unsigned long)*8,860,861);
+PinDeviceHandler Relay7(11,sizeof(unsigned long)*9,870,871);
 RFHandler MyRFDevices(2); //pin numbr
 IR_Handler MyIRDevices(3); 
 
@@ -409,6 +407,12 @@ void setup()  {
   ResetSuppress.init();
   Relay0.init();
   Relay1.init();
+  Relay2.init();
+  Relay3.init();
+  Relay4.init();
+  Relay5.init();
+  Relay6.init();
+  Relay7.init();
   MyRFDevices.init();
 
   digitalClockDisplay();
@@ -470,6 +474,12 @@ void loop() {
   ResetSuppress.setByCommand(rfControlCode);
   Relay0.setByCommand(rfControlCode);
   Relay1.setByCommand(rfControlCode); 
+  Relay2.setByCommand(rfControlCode);
+  Relay3.setByCommand(rfControlCode); 
+  Relay4.setByCommand(rfControlCode);
+  Relay5.setByCommand(rfControlCode); 
+  Relay6.setByCommand(rfControlCode);
+  Relay7.setByCommand(rfControlCode); 
   MyIRDevices.sendCommand(rfControlCode);
   MyRFDevices.sendCommand(rfControlCode);
   
