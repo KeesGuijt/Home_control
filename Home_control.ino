@@ -16,8 +16,8 @@ IRsend irsend;
 #include <EEPROM.h>
 
 /*-----( Declare Constants )-----*/
-#define HUISKAMER 1
-#define SLAAPKAMER 0
+#define HUISKAMER 0
+#define SLAAPKAMER 1
 
 #define TIME_HEADER  "T"   // Header tag for serial time sync message
 const char *timeHeader = "T";// TIME_HEADER;
@@ -31,11 +31,11 @@ const char *timeHeader = "T";// TIME_HEADER;
 
 //Elro  4 button remote  - nieuwe settings    323ms
 //Dynamic energy tx, code 1410  177ms
-#define SLAAPK_CHARGE_TX_AAN      4478259 // 30 (24Bit) device 1 on   
-#define SLAAPK_CHARGE_LAPTOP_UIT  4478732 // 35 (24Bit) device 3 off 
+//#define SLAAPK_CHARGE_TX_AAN      4478259 // 30 (24Bit) device 1 on   
+//#define SLAAPK_CHARGE_LAPTOP_UIT  4478732 // 35 (24Bit) device 3 off 
 //Klik-aan-klik-uit   (draai schakelaars)
-#define HUISK_LAMP_KAST_AAN       16405   // 40 (24Bit) device 1 on         FuzzyLogic   RemoteTransmitter.h  4400     
-#define HUISK_LAMP_KAST_UIT       16404   // 41 (24Bit) device 1 off        FuzzyLogic   RemoteTransmitter.h  4398
+#define HUISK_LAMP_KAST_AAN       4478259    // 40 (24Bit) device 1 on         FuzzyLogic   RemoteTransmitter.h  4400     
+#define HUISK_LAMP_KAST_UIT       4478268   // 41 (24Bit) device 1 off        FuzzyLogic   RemoteTransmitter.h  4398
 //Elro  4 button remote zilver, Lianne    323ms
 //Relay bar
 #define SLAAPK_WD_HDD_AAN         800 // d3 on    
@@ -148,18 +148,21 @@ ClockHandler::ClockHandler(int EEAddress)  //constructor definition
 
 void ClockHandler::init()
 {
-  //Get the time data from the EEPROM at position 'EEpromAddress'
-  unsigned long pctime; 
-  EEPROM.get(EEpromAddress, pctime);
-  if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
-       setTime(pctime); // Sync Arduino clock to the time received on the serial port
-       Serial.println("Arduino clock set from Eeprom");
+    if (HUISKAMER == 1)
+    {
+      //Get the time data from the EEPROM at position 'EEpromAddress'
+      unsigned long pctime; 
+      EEPROM.get(EEpromAddress, pctime);
+      if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
+           setTime(pctime); // Sync Arduino clock to the time received on the serial port
+           Serial.println("Arduino clock set from Eeprom");
+      }
   }
 }
 
 int ClockHandler::handle()
 {
-     int event=0;
+    unsigned long event=0;
 
     //every 30 min write to EEPROM to let clock survive resets by PC
     if ( ( (minute() == 0) or (minute() == 30) ) and (second() <2) )   //only close to beginning of these minutes
@@ -208,12 +211,15 @@ int ClockHandler::handle()
 
 void ClockHandler::set(unsigned long p_time)
 {
-     if( p_time >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
-        setTime(pctime); // Sync Arduino clock to the time received on the serial port
-        //Put the float data from the EEPROM at position 'eeAddress'
-        EEPROM.put(EEpromAddress, p_time);
-        Serial.println("Timeinfo from PC set and written to EEPROM.");
-     }
+    if (HUISKAMER == 1)
+    {
+       if( p_time >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
+          setTime(pctime); // Sync Arduino clock to the time received on the serial port
+          //Put the float data from the EEPROM at position 'eeAddress'
+          EEPROM.put(EEpromAddress, p_time);
+          Serial.println("Timeinfo from PC set and written to EEPROM.");
+       }
+    }
 }
 
 
@@ -288,6 +294,7 @@ void PinDeviceHandler::setByCommand(unsigned long command)
             if ( command == codeForOff ) 
             {
                 pinMode(outputPin, INPUT);  //pulling the resetpin down is not a good idea....
+                digitalWrite(outputPin,0);// set the ResetSuppressPin OFF
                 Serial.print("Controlled ResetSuppressPin\n");
                 EEPROM.put(EEpromAddress, command);
                 Serial.print("Written ResetSuppressPin state to EEPROM: ");
@@ -340,18 +347,18 @@ void RFHandler::sendCommand(unsigned long rfControlCode)
   //set RF pulselength and send if needed
   if ( rfControlCode > 881 ) 
   {
-      if ( (rfControlCode >= SLAAPK_CHARGE_TX_AAN ) && (rfControlCode <= SLAAPK_CHARGE_LAPTOP_UIT ) )
+      if ( (rfControlCode >= 4478268 ) && (rfControlCode <= 4478732 ) )
       {
-           mySwitch.setPulseLength(177);
+           mySwitch.setPulseLength(177);  //Dynamic energy tx
       }
-      else if ( (rfControlCode >= HUISK_LAMP_KAST_UIT ) && (rfControlCode <= HUISK_LAMP_KAST_AAN ) )
+      else if ( (rfControlCode >= 16404 ) && (rfControlCode <= 16405 ) )
       {
-           mySwitch.setPulseLength(360);
+           mySwitch.setPulseLength(360); //Kika
       }
       else
       {
-          mySwitch.setPulseLength(324);
-          Serial.print("Pl 324. ");
+          mySwitch.setPulseLength(324);  //Elro
+          Serial.print("Pl 324. ");  
       }   
       Serial.print("Sending RF command.");
       Serial.print(rfControlCode);
@@ -400,7 +407,7 @@ IR_Handler MyIRDevices(3);
 
 void setup()  {
   Serial.begin(9600);
-  while (!Serial) ; // Needed for Leonardo only
+  //while (!Serial) ; // Needed for Leonardo only
   pinMode(13, OUTPUT);
 
   Myclock.init();
@@ -416,8 +423,11 @@ void setup()  {
   MyRFDevices.init();
 
   digitalClockDisplay();
-  setSyncProvider( requestSync);  //set function to call when sync required
-  Serial.println("Waiting for sync message");
+  if (HUISKAMER == 1)
+  {
+    setSyncProvider( requestSync);  //set function to call when sync required
+    Serial.println("Waiting for sync message");
+  }
 }
 
 void digitalClockDisplay(){
@@ -469,6 +479,7 @@ void loop() {
   if (timeStatus()!= timeNotSet) {
     digitalClockDisplay();  
   }
+  //digitalClockDisplay();  
 
   //set pin or send code if needed
   ResetSuppress.setByCommand(rfControlCode);
@@ -485,8 +496,10 @@ void loop() {
   
   // Need interrupts for delay()
   interrupts();
-  delay(500);
+  delay(100);
   digitalWrite(13, HIGH);  // turn the LED on (HIGH is the voltage level)
-  delay(500);
+  delay(100);
   digitalWrite(13, LOW);   // turn the LED off
+  Serial.println(" ");
+
 }

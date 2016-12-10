@@ -8,8 +8,8 @@ import sys
 #print 'Number of arguments', len(sys.argv), 'arguments.'
 #print 'Argument List', str(sys.argv)
 
-SLAAPKAMER = 0
-HUISKAMER = 1
+SLAAPKAMER = 1
+HUISKAMER = 0
 
 if (len(sys.argv) == 2) :  
      kikaUnit = sys.argv[1]  #0 is the filename, 1 is the code to send
@@ -64,9 +64,10 @@ try:
     #//serial.close()
     #//exit(); 
     #while True :
-    for x in xrange(1, 11):
+    for x in xrange(1, 5):
          print arduino.readline()
-  
+         arduino.write(" ")
+ 
 except:
     print "Failed to send!"
  
