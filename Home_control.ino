@@ -29,19 +29,11 @@ const char *timeHeader = "T";// TIME_HEADER;
 #define RELAY_OFF 1
 
 
-//Elro  4 button remote  - nieuwe settings    323ms
-//Dynamic energy tx, code 1410  177ms
-//#define SLAAPK_CHARGE_TX_AAN      4478259 // 30 (24Bit) device 1 on   
-//#define SLAAPK_CHARGE_LAPTOP_UIT  4478732 // 35 (24Bit) device 3 off 
-//Klik-aan-klik-uit   (draai schakelaars)
-#define HUISK_LAMP_KAST_AAN       4478259    // 40 (24Bit) device 1 on         FuzzyLogic   RemoteTransmitter.h  4400     
-#define HUISK_LAMP_KAST_UIT       4478268   // 41 (24Bit) device 1 off        FuzzyLogic   RemoteTransmitter.h  4398
-//Elro  4 button remote zilver, Lianne    323ms
-//Relay bar
-#define SLAAPK_WD_HDD_AAN         800 // d3 on    
-//ResetSuppress
-#define RESET_SUPPRESS_AAN         100 // d11 on    
-#define RESET_SUPPRESS_UIT         101 // d11 on    
+//Timed devices
+#define HUISK_LAMP_KAST_AAN       4478259  
+#define HUISK_LAMP_KAST_UIT       4478268  
+#define HUISK_KERSTBOOM_AAN       4478403  
+#define HUISK_KERSTBOOM_UIT       4478412  
 
 /*-----( Declare Variables )-----*/
 const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
@@ -54,7 +46,7 @@ int timeOff = 0;
 
 unsigned long pctime;
 
-unsigned long rfControlCode;
+unsigned long controlCode;
 unsigned int period;
 
 
@@ -113,7 +105,7 @@ class RFHandler {    //"pre-declaration"
     void init();
 
     // Handler, to be called in the loop()
-    void sendCommand(unsigned long rfControlCode);
+    void sendCommand(unsigned long controlCode);
 
   private:
     int outputPin; 
@@ -204,6 +196,14 @@ int ClockHandler::handle()
           if ( (hour() == timeOff) and (minute() == 0) and (second() < 5) ) 
           {  
               event = HUISK_LAMP_KAST_UIT;
+          }
+          if ( (hour() == timeOn) and (minute() == 1) and (second() < 5) ) 
+          {
+              event = HUISK_KERSTBOOM_AAN;
+          }
+          if ( (hour() == timeOff) and (minute() == 1) and (second() < 5) ) 
+          {  
+              event = HUISK_KERSTBOOM_UIT;
           }
     }
     return event;
@@ -341,17 +341,17 @@ void RFHandler::init()
 
 }
 
-void RFHandler::sendCommand(unsigned long rfControlCode)
+void RFHandler::sendCommand(unsigned long controlCode)
 {
   
   //set RF pulselength and send if needed
-  if ( rfControlCode > 881 ) 
+  if ( controlCode > 881 ) 
   {
-      if ( (rfControlCode >= 4478268 ) && (rfControlCode <= 4478732 ) )
+      if ( (controlCode >= 4478259 ) && (controlCode <= 4478732 ) )
       {
            mySwitch.setPulseLength(177);  //Dynamic energy tx
       }
-      else if ( (rfControlCode >= 16404 ) && (rfControlCode <= 16405 ) )
+      else if ( (controlCode >= 16404 ) && (controlCode <= 16405 ) )
       {
            mySwitch.setPulseLength(360); //Kika
       }
@@ -361,8 +361,8 @@ void RFHandler::sendCommand(unsigned long rfControlCode)
           Serial.print("Pl 324. ");  
       }   
       Serial.print("Sending RF command.");
-      Serial.print(rfControlCode);
-      mySwitch.send (rfControlCode, 24);
+      Serial.print(controlCode);
+      mySwitch.send (controlCode, 24);
   }
 }
 
@@ -456,7 +456,7 @@ void processSyncMessage() {
   if(Serial.find(*timeHeader)) {
      pctime = Serial.parseInt();
      Myclock.set(pctime);
-     rfControlCode = pctime;
+     controlCode = pctime;
   }
 }
 
@@ -468,8 +468,8 @@ time_t requestSync()
 
 void loop() {
 
-  rfControlCode = 0; 
-  rfControlCode=Myclock.handle();   //get timed commands
+  controlCode = 0; 
+  controlCode=Myclock.handle();   //get timed commands
 
   //check for time from pc or serial control command
   if (Serial.available()) {
@@ -479,20 +479,20 @@ void loop() {
   if (timeStatus()!= timeNotSet) {
     digitalClockDisplay();  
   }
-  //digitalClockDisplay();  
 
   //set pin or send code if needed
-  ResetSuppress.setByCommand(rfControlCode);
-  Relay0.setByCommand(rfControlCode);
-  Relay1.setByCommand(rfControlCode); 
-  Relay2.setByCommand(rfControlCode);
-  Relay3.setByCommand(rfControlCode); 
-  Relay4.setByCommand(rfControlCode);
-  Relay5.setByCommand(rfControlCode); 
-  Relay6.setByCommand(rfControlCode);
-  Relay7.setByCommand(rfControlCode); 
-  MyIRDevices.sendCommand(rfControlCode);
-  MyRFDevices.sendCommand(rfControlCode);
+  Myclock.set(controlCode);
+  ResetSuppress.setByCommand(controlCode);
+  Relay0.setByCommand(controlCode);
+  Relay1.setByCommand(controlCode); 
+  Relay2.setByCommand(controlCode);
+  Relay3.setByCommand(controlCode); 
+  Relay4.setByCommand(controlCode);
+  Relay5.setByCommand(controlCode); 
+  Relay6.setByCommand(controlCode);
+  Relay7.setByCommand(controlCode); 
+  MyIRDevices.sendCommand(controlCode);
+  MyRFDevices.sendCommand(controlCode);
   
   // Need interrupts for delay()
   interrupts();
