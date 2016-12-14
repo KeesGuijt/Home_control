@@ -484,14 +484,14 @@ void setup()  {
       Serial.println(twoBytes); 
       cell = 0;
     
-      //
-      //one time erase all
+      /*
+      //one time erase all slots of the timout list 
       cell = 0;
       twoBytes = 0;
       EEPROM.put(timeoutListAddress, cell);
       EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
       EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
-      //      
+      */      
     }
   }
 }
