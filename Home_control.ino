@@ -15,8 +15,6 @@ IRsend irsend;
 #include <EEPROM.h>
 
 /*-----( Declare Constants )-----*/
-#define HUISKAMER 1
-#define SLAAPKAMER 0
 
 const char *timeHeader = "T";// Header tag for serial time sync message
 const char *commandHeader = "C";// Header tag for serial device command message
@@ -143,7 +141,7 @@ ClockHandler::ClockHandler(int EEAddress)  //constructor definition
 
 void ClockHandler::init()
 {
-    if (HUISKAMER == 1)
+    //if (HUISKAMER == 1)
     {
       //Get the time data from the EEPROM at position 'EEpromAddress'
       unsigned long pctime; 
@@ -245,7 +243,7 @@ int ClockHandler::handle()
 
 void ClockHandler::set(unsigned long p_time)
 {
-    if (HUISKAMER == 1)
+    //if (HUISKAMER == 1)
     {
        if( p_time >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
           setTime(p_time); // Sync Arduino clock to the time received on the serial port
@@ -556,11 +554,6 @@ void processMessage() {
          controlCode =  Serial.parseInt();
       }
   }
-
- //eat rest?
- //*header = Serial.read(); 
- //*header = Serial.read(); 
-
 }
 
 void loop() {
