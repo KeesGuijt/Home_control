@@ -14,8 +14,8 @@ for device in locations:
         print "-Trying...",device  
         arduino = serial.Serial(device, 9600)
  	#arduino.setDTR(False)
-        arduino.timeout = 0.5   
-	#time.sleep(0.5)
+        arduino.timeout = 0.2   
+	#time.sleep(0.2)
 
         #Print the response from the Arduino - to show the communication has started.
         #for x in range(0, 10) :
@@ -76,7 +76,7 @@ except:
          serial.close()
          exit() 
 
-for x in range(0, 10) :
+for x in range(0, 20) :
     for device in locations:  
         try:  
             #print "-Trying...",device  

@@ -41,6 +41,7 @@ const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
     #//serial.close()
 
 const int TIMEOUTLISTADDRESSSTART = 100;
+const int TIMEOUTLISTADDRESSLAST = 260;
 //int eeAddress = 0; //EEPROM address to start reading from
 
 int season = 1; //0 summer, 1 winter
@@ -53,9 +54,11 @@ unsigned long waitTime;
 unsigned long timeoutCommand;
 unsigned int period;
 
+long unsigned readTimeoutCommand(void);
 
 //////////////////////////////////////////////////////////////////////////////
 // Class definitions
+
 
 class ClockHandler {    //"pre-declaration"
   public:
@@ -124,8 +127,32 @@ class IR_Handler {    //"pre-declaration"
     int outputPin; 
 };
 
+class EEpromList_Handler {    //"pre-declaration"
+  public:
+    // Constructor
+    EEpromList_Handler(int firstAddress, int lastAddress); 
+    
+    // Initialization done after construction, to permit static instances
+    void init(void);
+    
+    // Handler, to be called in the loop()
+    void writeCommand(unsigned long controlCode, int timeoutHour, int timeoutMinute);
+    unsigned long readCommand(int timeoutHour, int timeoutMinute);     //return event
+    void listCommands(void);
+
+  private:
+    int firstAddr; 
+    int lastAddr; 
+    int timeoutHour;
+    int timeoutMinute;
+    int seekCommand(unsigned long timeoutCommand, int timeoutHour, int timeoutMinute, bool printIt);   
+};
+
+
 //#endif
 //end - This could be in a header file
+
+
 
 
 //start - This could be in a .cpp file
@@ -208,35 +235,11 @@ int ClockHandler::handle()
           }
     }
 
-    //check EEprom for timout events
-    for (int timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<180;timeoutListAddress+=8)
-    {
-        unsigned long timeoutCommand=0;
-        //int EEpromAddress=timeoutListAddress;
-        EEPROM.get(timeoutListAddress, timeoutCommand); 
-        int timeoutHour = 0;
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long), timeoutHour);
-        int timeoutMinute = 0;
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), timeoutMinute);
-        
-        if (timeoutCommand > 0)  //active controlCode
-        {
-            if ( (hour() == timeoutHour) && (minute() == timeoutMinute) && (second() < 5) ) 
-            {
-                event = timeoutCommand;
-                Serial.print("Found to do: ");
-                Serial.println(timeoutCommand);
-                
-                //Now erase the item
-                timeoutCommand = 0;
-                int twoBytes = 0;
-                EEPROM.put(timeoutListAddress, timeoutCommand);
-                EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
-                EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
-                //break;  //only one event
-            }
-        }
-    }
+    if (event == 0 )
+	  {
+    	EEpromList_Handler ReadTimeoutList(100,260);  //first/last EEprom address
+	    event = ReadTimeoutList.readCommand(hour(), minute());
+	  }
     
     return event;
 }
@@ -412,6 +415,126 @@ void IR_Handler::sendCommand(unsigned long irControlCode)
   }
 }
 
+EEpromList_Handler::EEpromList_Handler(int firstAddress, int lastAddress)  //constructor definition
+:  firstAddr(firstAddress), lastAddr(lastAddress)  
+{
+}
+
+void EEpromList_Handler::writeCommand(unsigned long controlCode, int timeoutHour, int timeoutMinute)
+{ 
+    int itemFound = 0;
+    int timeoutListAddress = 0;
+    //check for timeout commands
+    //if found, use that EEPprom item
+    //else find first empy line 
+
+    //check list
+    timeoutListAddress = seekCommand(controlCode, 0, 0, false);   //find a controlcode
+   
+    // if not found, create a new item in first free slot found
+    if (timeoutListAddress == 0)
+    {
+        timeoutListAddress = seekCommand(0, 0, 0, false);   //find a controlcode
+    }
+    
+    //update or add slot
+    if (timeoutListAddress > 0)
+    {
+         EEPROM.put(timeoutListAddress, controlCode);
+         EEPROM.put(timeoutListAddress+sizeof(unsigned long), timeoutHour);
+         EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), timeoutMinute);  
+         Serial.print("Item written to timeout list on address ");      
+         Serial.println(timeoutListAddress);      
+    }
+	
+}        
+
+
+unsigned long EEpromList_Handler::readCommand(int timeoutHour, int timeoutMinute)      //return event
+{ 
+	
+    unsigned long event=0;
+    int timeoutListAddress=0;
+
+    //check list
+    timeoutListAddress = seekCommand(0, timeoutHour, timeoutMinute, false);   //find a controlcode it is time for
+	  EEPROM.get(timeoutListAddress, event); 
+    //Now erase the item
+    const unsigned long cell=0; 
+    const int twoBytes=0;
+    EEPROM.put(timeoutListAddress, cell);
+    EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
+    EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
+
+	return event;
+}        
+
+
+void EEpromList_Handler::listCommands(void)
+{ 
+    //dump list
+    int dummy = seekCommand(999999, 99, 99, true);   //random numbers, just print
+}        
+
+
+int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHour, int timeoutMinute, bool printIt)   
+{ 
+  
+    //dump list
+    int itemFound = 0;
+    int slot = 0;
+    int timeoutListAddress = 0;
+    int twoBytes = 0;
+    unsigned long timeoutListItemCommand=0;
+    //check for timeout commands
+    //if found, use that EEPprom item
+    //else find first empy line 
+    for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<TIMEOUTLISTADDRESSLAST;timeoutListAddress+=8)
+    {
+      //int EEpromAddress=timeoutListAddress;
+      EEPROM.get(timeoutListAddress, timeoutListItemCommand); 
+      if (timeoutListItemCommand==timeoutCommand && slot==0)  //first item that matches timeoutCommand
+      {
+        slot = timeoutListAddress;
+      }
+ 
+      if (timeoutListItemCommand > 0)     //slot is in use
+      { 
+        //int EEpromAddress=timeoutListAddress;
+        EEPROM.get(timeoutListAddress, timeoutListItemCommand); 
+        //int timeoutHour = 0;
+        EEPROM.get(timeoutListAddress+sizeof(unsigned long), timeoutHour);
+        //int timeoutMinute = 0;
+        EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), timeoutMinute);
+        if ( (hour() == timeoutHour) && (minute() == timeoutMinute) && (second() < 5) ) 
+        {
+          slot = timeoutListAddress;
+          Serial.print("Found to do: ");
+          Serial.println(timeoutListItemCommand);          
+        }
+        if (printIt)
+        { 
+          Serial.print(timeoutListItemCommand); 
+          Serial.print(" "); 
+          EEPROM.get(timeoutListAddress+sizeof(unsigned long), twoBytes);
+          Serial.print(twoBytes); 
+          Serial.print(":"); 
+          EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
+          Serial.println(twoBytes); 
+
+          /*
+          ///Now erase the item   - on time only
+          const unsigned long cell=0; 
+          const int twoBytes=0;
+          EEPROM.put(timeoutListAddress, cell);
+          EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
+          EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
+          */      
+        }
+      }     
+    }    
+	return slot;   //first match (command or time)
+}        
 //end - This could be in a .cpp file
 
 
@@ -420,7 +543,7 @@ void IR_Handler::sendCommand(unsigned long irControlCode)
 
 // Instantiate objects
 ClockHandler Myclock(0); //first EEprom address
-
+EEpromList_Handler TimeoutList(100,260);  //first/last EEprom address
 PinDeviceHandler ResetSuppress(12,sizeof(unsigned long)*1,100,101);
 PinDeviceHandler Relay0(4,sizeof(unsigned long)*2,800,801);
 PinDeviceHandler Relay1(5,sizeof(unsigned long)*3,810,811);
@@ -441,7 +564,10 @@ void setup()  {
   pinMode(13, OUTPUT);
 
   
-  Myclock.init();     
+  Myclock.init();   
+  
+  //TimeoutList.init();   //clear list 
+  
   ResetSuppress.init();
   
   Relay0.init();
@@ -459,10 +585,14 @@ void setup()  {
   //dump timeout list
   bool itemFound = 0;
   int timeoutListAddress = 0;
-  //check for timout commands
+  //check for timeout commands
   //if found, use that EEPprom item
   //else find first empy line 
-  for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<180;timeoutListAddress+=8)
+  
+  TimeoutList.listCommands(); 
+  
+  /*
+  for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<TIMEOUTLISTADDRESSLAST;timeoutListAddress+=8)
   {   
     unsigned long cell; 
     int twoBytes=0;
@@ -470,28 +600,29 @@ void setup()  {
     
     if (cell > 0)
     { 
-      Serial.print(timeoutListAddress); 
-      Serial.print(" "); 
+      //Serial.print(timeoutListAddress); 
+      //Serial.print(" "); 
       //EEPROM.get(timeoutListAddress, cell);
       Serial.print(cell); 
       Serial.print(" "); 
       EEPROM.get(timeoutListAddress+sizeof(unsigned long), twoBytes);
       Serial.print(twoBytes); 
-      Serial.print(" "); 
+      Serial.print(":"); 
       EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
       Serial.println(twoBytes); 
       cell = 0;
     
-      /*
-      //one time erase all slots of the timout list 
+      /
+      //one time erase all slots of the timeout list 
       cell = 0;
       twoBytes = 0;
       EEPROM.put(timeoutListAddress, cell);
       EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
       EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
-      */      
+      /      
     }
-  }
+  }  
+  */
 }
 
 void digitalClockDisplay(){
@@ -556,6 +687,7 @@ void processMessage() {
   }
 }
 
+
 void loop() {
 
   controlCode = 0; 
@@ -574,127 +706,31 @@ void loop() {
   if (waitTime > 0) //waittime received
   {
     pctime=now();
-    unsigned long timoutTime = pctime+(waitTime*60); //minutes to seconds
-    int timoutHour= hour(timoutTime);
-    int timoutMinute= minute(timoutTime);
+    unsigned long timeoutTime = pctime+(waitTime*60); //minutes to seconds
+    int timeoutHour= hour(timeoutTime);
+    int timeoutMinute= minute(timeoutTime);
     Serial.print(", hour(now)  "); 
     Serial.print(hour()); 
     Serial.print(":"); 
     Serial.print(minute()); 
     Serial.print(" ;planned "); 
-    Serial.print(timoutHour); 
+    Serial.print(timeoutHour); 
     Serial.print(":"); 
-    Serial.print(timoutMinute); 
+    Serial.print(timeoutMinute); 
     Serial.print(" timeoutCommand "); 
     Serial.println(timeoutCommand); 
     
-    int itemFound = 0;
-    int timeoutListAddress = 0;
-    //check for timout commands
-    //if found, use that EEPprom item
-    //else find first empy line 
-    for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<180;timeoutListAddress+=8)
-    {
-      unsigned long timeCommandListItem=0;
-      EEPROM.get(timeoutListAddress, timeCommandListItem); 
-      if (timeCommandListItem==timeoutCommand)  //item matches timeoutCommand
-      {
-        itemFound = timeoutListAddress;
-        break;
-      }
-/*
-      //dump timout list
-      unsigned long cell; 
-      int twoBytes=0;
-      EEPROM.get(timeoutListAddress, cell);
- 
-      if (cell > 0)
-      { 
-        Serial.print(timeoutListAddress); 
-        Serial.print(" "); 
-        //EEPROM.get(timeoutListAddress, cell);
-        Serial.print(cell); 
-        Serial.print(" "); 
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long), twoBytes);
-        Serial.print(twoBytes); 
-        Serial.print(" "); 
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
-        Serial.print(twoBytes); 
-      }     
-*/
-    }
-   
-    // create a new item in first free slot found
-    if (itemFound == 0)
-    {
-        for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<180;timeoutListAddress+=8)
-        {
-          unsigned long timeCommandListItem=0;
-          EEPROM.get(timeoutListAddress, timeCommandListItem); 
-          if (timeCommandListItem==0)  //item is empty
-          {
-            itemFound = timeoutListAddress;
-            break;
-          }
-        }
-    }
-    
-    //update or add slot
-    if (itemFound > 0)
-    {
-         EEPROM.put(itemFound, timeoutCommand);
-         EEPROM.put(itemFound+sizeof(unsigned long), timoutHour);
-         EEPROM.put(itemFound+sizeof(unsigned long)+sizeof(int), timoutMinute);  
-         Serial.print("Item written to timeout list on address ");      
-         Serial.println(itemFound);      
-    }
+    TimeoutList.writeCommand(timeoutCommand,timeoutHour,timeoutMinute);
 
-  }
+  } //wait
 
   
   if (timeStatus()!= timeNotSet && (second() == 0)) {
     digitalClockDisplay(); 
 
-
-/*
     //dump list
-    int itemFound = 0;
-    int timeoutListAddress = 0;
-    //check for timout commands
-    //if found, use that EEPprom item
-    //else find first empy line 
-    for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<180;timeoutListAddress+=8)
-    {
-      unsigned long timeCommandListItem=0;
-      //int EEpromAddress=timeoutListAddress;
-      EEPROM.get(timeoutListAddress, timeCommandListItem); 
-      if (timeCommandListItem==timeoutCommand)  //item matches timeoutCommand
-      {
-        itemFound = timeoutListAddress;
-     }
-
-      //dump timout list
-      unsigned long cell; 
-      int twoBytes=0;
-      EEPROM.get(timeoutListAddress, cell);
- 
-      if (cell > 0)
-      { 
-        Serial.print(timeoutListAddress); 
-        Serial.print(" "); 
-        //EEPROM.get(timeoutListAddress, cell);
-        Serial.print(cell); 
-        Serial.print(" "); 
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long), twoBytes);
-        Serial.print(twoBytes); 
-        Serial.print(" "); 
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
-        Serial.println(twoBytes); 
-      }     
-    }    
-*/
-
-
+    TimeoutList.listCommands();   
+	
     delay(1000); //limit output
   }
 
