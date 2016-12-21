@@ -4,6 +4,11 @@
 * Reset on serial conenct is disabled by a 50 ohm resistor on i/o pin (12) 
 * 
 * Connect the RF transmitter to digital pin 2, and the IR led to pin 3
+
+
+
+// - This could be in a header file "HomeControl.h"
+
 */
 
 /*-----( Import needed libraries )-----*/
@@ -15,18 +20,8 @@ IRsend irsend;
 #include <EEPROM.h>
 
 /*-----( Declare Constants )-----*/
-
-const char *timeHeader = "T";// Header tag for serial time sync message
-const char *commandHeader = "C";// Header tag for serial device command message
-const char *waitHeader = "W";// Header tag for serial wait minutes message
-
-//#define TIME_REQUEST  7    // ASCII bell character requests a time sync message 
-
 #define TIME_HOUR_ON  15     //per month a correction is added
 #define TIME_HOUR_OFF  23  
-#define RELAY_ON 0
-#define RELAY_OFF 1
-
 
 //Timed devices
 #define HUISK_LAMP_KAST_AAN       4478259  
@@ -34,27 +29,7 @@ const char *waitHeader = "W";// Header tag for serial wait minutes message
 #define HUISK_KERSTBOOM_AAN       4478403  
 #define HUISK_KERSTBOOM_UIT       4478412  
 
-/*-----( Declare Variables )-----*/
-const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
-//2016-12-14 10:49:16  T1481712556
-
-    #//serial.close()
-
-const int TIMEOUTLISTADDRESSSTART = 100;
-const int TIMEOUTLISTADDRESSLAST = 260;
-//int eeAddress = 0; //EEPROM address to start reading from
-
-int season = 1; //0 summer, 1 winter
-int timeOn = 0; 
-int timeOff = 0; 
-
-unsigned long pctime;
-unsigned long controlCode;
-unsigned long waitTime;
-unsigned long timeoutCommand;
-unsigned int period;
-
-long unsigned readTimeoutCommand(void);
+unsigned long processMessage(void);
 
 //////////////////////////////////////////////////////////////////////////////
 // Class definitions
@@ -73,11 +48,15 @@ class ClockHandler {    //"pre-declaration"
       //set time, write to eeprom, say time    
 
     // Handler, to be called in the loop()
-    int handle();
+    unsigned long handle();
 
   private:
     const int EEpromAddress;           // pin to which button is connected
     unsigned long pctime; 
+    const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
+    //2016-12-14 10:49:16  T1481712556
+    int timeOn = 0; 
+    int timeOff = 0; 
 };
 
 class PinDeviceHandler {    //"pre-declaration"
@@ -97,6 +76,8 @@ class PinDeviceHandler {    //"pre-declaration"
     int outputPin; 
     unsigned long codeForOn; 
     unsigned long codeForOff; 
+    #define RELAY_ON 0
+    #define RELAY_OFF 1
 };
 
 
@@ -130,13 +111,13 @@ class IR_Handler {    //"pre-declaration"
 class EEpromList_Handler {    //"pre-declaration"
   public:
     // Constructor
-    EEpromList_Handler(int firstAddress, int lastAddress); 
+    EEpromList_Handler(int firstAddr, int lastAddr); 
     
     // Initialization done after construction, to permit static instances
     void init(void);
     
     // Handler, to be called in the loop()
-    void writeCommand(unsigned long controlCode, int timeoutHour, int timeoutMinute);
+    void writeCommand(unsigned long controlCodeW, int timeoutHour, int timeoutMinute);
     unsigned long readCommand(int timeoutHour, int timeoutMinute);     //return event
     void listCommands(void);
 
@@ -157,7 +138,7 @@ class EEpromList_Handler {    //"pre-declaration"
 
 //start - This could be in a .cpp file
 //#include "Arduino.h"
-//#include "Morse.h"
+//#include "HomeControl.h"
 
 //member definitions
 
@@ -168,8 +149,6 @@ ClockHandler::ClockHandler(int EEAddress)  //constructor definition
 
 void ClockHandler::init()
 {
-    //if (HUISKAMER == 1)
-    {
       //Get the time data from the EEPROM at position 'EEpromAddress'
       unsigned long pctime; 
       EEPROM.get(EEpromAddress, pctime);
@@ -177,10 +156,9 @@ void ClockHandler::init()
            setTime(pctime); // Sync Arduino clock to the time received on the serial port
            Serial.println("Arduino clock set from Eeprom");
       }
-  }
 }
 
-int ClockHandler::handle()
+unsigned long ClockHandler::handle()
 {
     unsigned long event=0;
 
@@ -191,69 +169,59 @@ int ClockHandler::handle()
       //Put the float data from the EEPROM at position 'eeAddress'
       EEPROM.put(EEpromAddress, pctime);
       Serial.print("Timeinfo written to EEPROM.");
-      delay(2000);
+      delay(1000);
     } 
 
-    //if (HUISKAMER == 1)
+    //check time, see if RF switch control is planned
+    /*  times are calculated:
+    int(6.5-abs(month()-6.5)) 
+    jan 16
+    feb 17
+    mrt 18
+    apr 19
+    mei 20
+    jun 21
+    jul 21
+    aug 20
+    sep 19
+    okt 18
+    nov 17
+    dec 16
+    */
+    timeOn = TIME_HOUR_ON + int(6.5-abs(month()-6.5));
+    timeOff = TIME_HOUR_OFF;
+    if ( (hour() == timeOn) and (minute() == 0) and (second() < 5) ) 
     {
-          //check time, see if RF switch control is planned
-          /*  times are calculated:
-          int(6.5-abs(month()-6.5)) 
-          jan 16
-          feb 17
-          mrt 18
-          apr 19
-          mei 20
-          jun 21
-          jul 21
-          aug 20
-          sep 19
-          okt 18
-          nov 17
-          dec 16
-          */
-          timeOn = TIME_HOUR_ON + int(6.5-abs(month()-6.5));
-          timeOff = TIME_HOUR_OFF;
-          //Serial.print("On/Off times:");
-          //Serial.print(timeOn);
-          //Serial.println(timeOff);
-          if ( (hour() == timeOn) and (minute() == 0) and (second() < 5) ) 
-          {
-              event = HUISK_LAMP_KAST_AAN;
-          }
-          if ( (hour() == timeOff) and (minute() == 0) and (second() < 5) ) 
-          {  
-              event = HUISK_LAMP_KAST_UIT;
-          }
-          if ( (hour() == timeOn) and (minute() == 1) and (second() < 5) ) 
-          {
-              event = HUISK_KERSTBOOM_AAN;
-          }
-          if ( (hour() == timeOff) and (minute() == 1) and (second() < 5) ) 
-          {  
-              event = HUISK_KERSTBOOM_UIT;
-          }
+        event = HUISK_LAMP_KAST_AAN;
+    }
+    if ( (hour() == timeOff) and (minute() == 0) and (second() < 5) ) 
+    {  
+        event = HUISK_LAMP_KAST_UIT;
+    }
+    if ( (hour() == timeOn) and (minute() == 1) and (second() < 5) ) 
+    {
+        event = HUISK_KERSTBOOM_AAN;
+    }
+    if ( (hour() == timeOff) and (minute() == 1) and (second() < 5) ) 
+    {  
+        event = HUISK_KERSTBOOM_UIT;
     }
 
     if (event == 0 )
-	  {
-    	EEpromList_Handler ReadTimeoutList(100,260);  //first/last EEprom address
-	    event = ReadTimeoutList.readCommand(hour(), minute());
-	  }
-    
+    {
+        EEpromList_Handler ReadTimeoutList(100,260);  //first/last EEprom address
+        event = ReadTimeoutList.readCommand(hour(), minute());
+    }
     return event;
 }
 
 void ClockHandler::set(unsigned long p_time)
 {
-    //if (HUISKAMER == 1)
-    {
-       if( p_time >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
-          setTime(p_time); // Sync Arduino clock to the time received on the serial port
-          //Put the float data from the EEPROM at position 'eeAddress'
-          EEPROM.put(EEpromAddress, p_time);
-          Serial.println("Timeinfo from PC set and written to EEPROM.");
-       }
+    if( p_time >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
+        setTime(p_time); // Sync Arduino clock to the time received on the serial port
+        //Put the float data from the EEPROM at position 'eeAddress'
+        EEPROM.put(EEpromAddress, p_time);
+        Serial.println("Timeinfo from PC set and written to EEPROM.");
     }
 }
 
@@ -356,7 +324,6 @@ void PinDeviceHandler::setByCommand(unsigned long command)
             Serial.println(command);
         }
     }  
-
 }
 
 RFHandler::RFHandler(int o_pin)  //constructor definition
@@ -376,7 +343,7 @@ void RFHandler::sendCommand(unsigned long controlCode)
 {
   
   //set RF pulselength and send if needed
-  if ( controlCode > 881 ) 
+  if ( (controlCode > 881) && (controlCode < 1482313385) ) 
   {
       if ( (controlCode >= 4478259 ) && (controlCode <= 4478732 ) )
       {
@@ -420,7 +387,7 @@ EEpromList_Handler::EEpromList_Handler(int firstAddress, int lastAddress)  //con
 {
 }
 
-void EEpromList_Handler::writeCommand(unsigned long controlCode, int timeoutHour, int timeoutMinute)
+void EEpromList_Handler::writeCommand(unsigned long controlCodeW, int timeoutHour, int timeoutMinute)
 { 
     int itemFound = 0;
     int timeoutListAddress = 0;
@@ -429,7 +396,7 @@ void EEpromList_Handler::writeCommand(unsigned long controlCode, int timeoutHour
     //else find first empy line 
 
     //check list
-    timeoutListAddress = seekCommand(controlCode, 0, 0, false);   //find a controlcode
+    timeoutListAddress = seekCommand(controlCodeW, 0, 0, false);   //find a controlcode
    
     // if not found, create a new item in first free slot found
     if (timeoutListAddress == 0)
@@ -440,34 +407,45 @@ void EEpromList_Handler::writeCommand(unsigned long controlCode, int timeoutHour
     //update or add slot
     if (timeoutListAddress > 0)
     {
-         EEPROM.put(timeoutListAddress, controlCode);
+         EEPROM.put(timeoutListAddress, controlCodeW);
          EEPROM.put(timeoutListAddress+sizeof(unsigned long), timeoutHour);
          EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), timeoutMinute);  
-         Serial.print("Item written to timeout list on address ");      
+         Serial.print("Item ");      
+         Serial.print(controlCodeW);      
+         Serial.print(" written to timeout list on address ");      
          Serial.println(timeoutListAddress);      
     }
-	
-}        
+}
 
 
 unsigned long EEpromList_Handler::readCommand(int timeoutHour, int timeoutMinute)      //return event
 { 
-	
+    
     unsigned long event=0;
     int timeoutListAddress=0;
 
     //check list
     timeoutListAddress = seekCommand(0, timeoutHour, timeoutMinute, false);   //find a controlcode it is time for
-	  EEPROM.get(timeoutListAddress, event); 
-    //Now erase the item
-    const unsigned long cell=0; 
-    const int twoBytes=0;
-    EEPROM.put(timeoutListAddress, cell);
-    EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
-    EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
-
-	return event;
-}        
+    if (timeoutListAddress > 0)
+    {
+        //Serial.print("slot : ");
+        //Serial.print(timeoutListAddress);
+        
+        EEPROM.get(timeoutListAddress, event); 
+        //Now erase the item
+        const unsigned long fourBytes=0; 
+        const int twoBytes=0;
+        EEPROM.put(timeoutListAddress, fourBytes);
+        EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
+        EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
+    }
+    if (event > 0 )
+    {
+       //Serial.print("command : ");
+       //Serial.print(event);
+    }
+    return event;
+}
 
 
 void EEpromList_Handler::listCommands(void)
@@ -481,15 +459,16 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
 { 
   
     //dump list
-    int itemFound = 0;
     int slot = 0;
     int timeoutListAddress = 0;
     int twoBytes = 0;
     unsigned long timeoutListItemCommand=0;
     //check for timeout commands
-    //if found, use that EEPprom item
+    //if found, use that EEPprom slot
     //else find first empy line 
-    for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<TIMEOUTLISTADDRESSLAST;timeoutListAddress+=8)
+
+    slot = 0;
+    for (timeoutListAddress=firstAddr; timeoutListAddress < lastAddr; timeoutListAddress+=8)
     {
       //int EEpromAddress=timeoutListAddress;
       EEPROM.get(timeoutListAddress, timeoutListItemCommand); 
@@ -500,18 +479,22 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
  
       if (timeoutListItemCommand > 0)     //slot is in use
       { 
-        //int EEpromAddress=timeoutListAddress;
-        EEPROM.get(timeoutListAddress, timeoutListItemCommand); 
-        //int timeoutHour = 0;
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long), timeoutHour);
-        //int timeoutMinute = 0;
-        EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), timeoutMinute);
-        if ( (hour() == timeoutHour) && (minute() == timeoutMinute) && (second() < 5) ) 
-        {
-          slot = timeoutListAddress;
-          Serial.print("Found to do: ");
-          Serial.println(timeoutListItemCommand);          
+        if (slot==0) 
+            { 
+            EEPROM.get(timeoutListAddress, timeoutListItemCommand); 
+            EEPROM.get(timeoutListAddress+sizeof(unsigned long), timeoutHour);
+            EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), timeoutMinute);
+            if ( (hour() == timeoutHour) && (minute() == timeoutMinute) && (second() < 5) ) 
+            {
+              slot = timeoutListAddress;
+              if (!printIt)
+              {
+                  Serial.print("Found to do: ");
+                  Serial.println(timeoutListItemCommand);          
+              }
+            }
         }
+        
         if (printIt)
         { 
           Serial.print(timeoutListItemCommand); 
@@ -524,16 +507,16 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
 
           /*
           ///Now erase the item   - on time only
-          const unsigned long cell=0; 
+          const unsigned long fourBytes=0; 
           const int twoBytes=0;
-          EEPROM.put(timeoutListAddress, cell);
+          EEPROM.put(timeoutListAddress, fourBytes);
           EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
           EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
           */      
         }
       }     
     }    
-	return slot;   //first match (command or time)
+    return slot;   //first match (command or time)
 }        
 //end - This could be in a .cpp file
 
@@ -560,14 +543,11 @@ IR_Handler MyIRDevices(3);
 void setup()  {
   Serial.begin(9600);
   while (!Serial) ; // Needed for Leonardo only
-  //Serial.setTimeout(200);  //never block
   pinMode(13, OUTPUT);
 
   
-  Myclock.init();   
-  
-  //TimeoutList.init();   //clear list 
-  
+  Myclock.init();    
+ 
   ResetSuppress.init();
   
   Relay0.init();
@@ -585,44 +565,8 @@ void setup()  {
   //dump timeout list
   bool itemFound = 0;
   int timeoutListAddress = 0;
-  //check for timeout commands
-  //if found, use that EEPprom item
-  //else find first empy line 
-  
-  TimeoutList.listCommands(); 
-  
-  /*
-  for (timeoutListAddress=TIMEOUTLISTADDRESSSTART;timeoutListAddress<TIMEOUTLISTADDRESSLAST;timeoutListAddress+=8)
-  {   
-    unsigned long cell; 
-    int twoBytes=0;
-    EEPROM.get(timeoutListAddress, cell);
-    
-    if (cell > 0)
-    { 
-      //Serial.print(timeoutListAddress); 
-      //Serial.print(" "); 
-      //EEPROM.get(timeoutListAddress, cell);
-      Serial.print(cell); 
-      Serial.print(" "); 
-      EEPROM.get(timeoutListAddress+sizeof(unsigned long), twoBytes);
-      Serial.print(twoBytes); 
-      Serial.print(":"); 
-      EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
-      Serial.println(twoBytes); 
-      cell = 0;
-    
-      /
-      //one time erase all slots of the timeout list 
-      cell = 0;
-      twoBytes = 0;
-      EEPROM.put(timeoutListAddress, cell);
-      EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
-      EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes); 
-      /      
-    }
-  }  
-  */
+
+  TimeoutList.listCommands();  
 }
 
 void digitalClockDisplay(){
@@ -647,98 +591,98 @@ void printDigits(int digits){
   Serial.print(digits);
 }
 
-// return/set global T, W + C or C
-void processMessage() {
-  //if(Serial.find(*timeHeader)) 
+// return T, W + C or C command
+unsigned long processMessage(void) {
+
+  int waitTime = 0; 
+  unsigned long controlCode = 0; 
+
+  const char *timeHeader = "T";// Header tag for serial time sync message
+  const char *commandHeader = "C";// Header tag for serial device command message
+  const char *waitHeader = "W";// Header tag for serial wait minutes message
+
   char *header;
-    //if(Serial.read() == *timeHeader) 
   *header = Serial.read(); 
 
   if(*header == *timeHeader) 
   {
-     Serial.print("Time ");         
-     pctime = Serial.parseInt();
-     Myclock.set(pctime);
+     controlCode = Serial.parseInt();
   }
   if( *header == *waitHeader)  
   {
-     waitTime =  Serial.parseInt();
+     waitTime = Serial.parseInt();
      Serial.print("Wait ");   
      Serial.print(waitTime);      
+     unsigned long timeoutTime = now()+(waitTime*60); //minutes to seconds
+     int timeoutHour= hour(timeoutTime);
+     int timeoutMinute= minute(timeoutTime);
+     Serial.print(" ;planned "); 
+     Serial.print(timeoutHour); 
+     Serial.print(":"); 
+     Serial.print(timeoutMinute); 
+     
      //W must be followed by C
-     for (int i = 0; i < 3; i++)
+	 for (int i = 0; i < 3; i++)      //process space(s)
      {
         if (Serial.read() == *commandHeader)
         {
-           Serial.print(", then command ");         
-           timeoutCommand =  Serial.parseInt();
-           Serial.print (timeoutCommand);
+           Serial.print(", command ");         
+           controlCode =  Serial.parseInt();
+           Serial.println (controlCode);
+           Serial.println (" ");
         }
      }
+     TimeoutList.writeCommand(controlCode,timeoutHour,timeoutMinute);
+     
+     controlCode = 0; //no command right now 
   }
   else
   {
       if(*header == *commandHeader) 
       {
-         //Serial.find(*commandHeader);          
-         //Serial.print("Command ");         
-         controlCode =  Serial.parseInt();
+         controlCode = Serial.parseInt();
       }
   }
+
+  return controlCode;
 }
 
 
 void loop() {
+  unsigned long controlCode;
+  
+  controlCode = 0;  //start blank every loop
 
-  controlCode = 0; 
-  waitTime = 0; 
+  //display some info periodically
+  if (timeStatus()!= timeNotSet && (second() == 0)) {
+    digitalClockDisplay(); 
+    int timeOn = TIME_HOUR_ON + int(6.5-abs(month()-6.5));
+    int timeOff = TIME_HOUR_OFF;
+    Serial.print("On/Off times: ");
+    Serial.print(timeOn);
+    Serial.print(" & ");
+    Serial.println(timeOff);
+
+    //dump list
+    TimeoutList.listCommands();   
+    Serial.println(" ");
+    
+    delay(1000); //limit output
+  }
   
   //check for time from pc or serial control command
   if (Serial.available()) {
-    processMessage();
+    controlCode=processMessage();
   }
 
+  Myclock.set(controlCode);  //set if received   
   if (controlCode == 0)
   {
     controlCode=Myclock.handle();   //get timed commands
   }  
 
-  if (waitTime > 0) //waittime received
-  {
-    pctime=now();
-    unsigned long timeoutTime = pctime+(waitTime*60); //minutes to seconds
-    int timeoutHour= hour(timeoutTime);
-    int timeoutMinute= minute(timeoutTime);
-    Serial.print(", hour(now)  "); 
-    Serial.print(hour()); 
-    Serial.print(":"); 
-    Serial.print(minute()); 
-    Serial.print(" ;planned "); 
-    Serial.print(timeoutHour); 
-    Serial.print(":"); 
-    Serial.print(timeoutMinute); 
-    Serial.print(" timeoutCommand "); 
-    Serial.println(timeoutCommand); 
-    
-    TimeoutList.writeCommand(timeoutCommand,timeoutHour,timeoutMinute);
-
-  } //wait
-
-  
-  if (timeStatus()!= timeNotSet && (second() == 0)) {
-    digitalClockDisplay(); 
-
-    //dump list
-    TimeoutList.listCommands();   
-	
-    delay(1000); //limit output
-  }
-
   //set pin or send code if needed
-  Myclock.set(controlCode);     
-  
-  ResetSuppress.setByCommand(controlCode);
-  
+  ResetSuppress.setByCommand(controlCode); 
   Relay0.setByCommand(controlCode);
   Relay1.setByCommand(controlCode); 
   Relay2.setByCommand(controlCode);
@@ -749,14 +693,13 @@ void loop() {
   Relay7.setByCommand(controlCode); 
   MyIRDevices.sendCommand(controlCode);
   MyRFDevices.sendCommand(controlCode);
-  
+
   // Need interrupts for delay()
   interrupts();
   delay(100);
   digitalWrite(13, HIGH);  // turn the LED on (HIGH is the voltage level)
   delay(100);
   digitalWrite(13, LOW);   // turn the LED off
-  //Serial.print(" ");
 
 }
 
