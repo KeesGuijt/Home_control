@@ -35,10 +35,10 @@ IRsend irsend;
 
 unsigned long processMessage(void);
 
-bool pcOnFlag=false;
 bool bureauLampOnFlag=false;
 bool pcMonitorsOnFlag=false;
 bool tvOnFlag=false; 
+bool pirMonitorsArmedFlag=false;
 
 //////////////////////////////////////////////////////////////////////////////
 // Class definitions
@@ -154,7 +154,7 @@ class PirHandler {    //"pre-declaration"
   protected:
     const int pin;           // pin to which pir is connected
     bool pirActivityFlag; 
-    int inactivitySeconds;
+    int activitySeconds;
     bool humanPresentFlag; 
     
 };
@@ -416,7 +416,6 @@ void RFHandler::sendCommand(unsigned long controlCode)
       if (controlCode == SLAAPK_BEELDSCH_AAN)
 	  {
 		pcMonitorsOnFlag = true;	  	
-        pcOnFlag=pcOnFlag= true;  // assume monitors are needed for computer use
 
 		//delay(3000);
 		//controlCode = SLAAPK_TV_AAN;
@@ -427,7 +426,6 @@ void RFHandler::sendCommand(unsigned long controlCode)
 	  {
 		pcMonitorsOnFlag = false;	  	
         tvOnFlag=false;           	   
-        //pcOnFlag= false;        //may need pc later
       }
   }
 }
@@ -646,11 +644,11 @@ void PirHandler::handlePirActivity()
    }  	
    */
    //Serial.print(analogRead(pin));
-   if (!pirActivityFlag && (analogRead(pin)>125))
+   if ((!pirActivityFlag) && (analogRead(pin)>125))
    {
-   		inactivitySeconds++;
+   		activitySeconds++;
 
-        if (inactivitySeconds >= 30)
+        if (activitySeconds >= 55)   //30 picks up rf commands as activity 
         {  
    			Serial.print(" Activity ");
 	   		pirActivityFlag = true;
@@ -663,7 +661,7 @@ void PirHandler::handlePirActivity()
 	               pirControlCode = SLAAPK_BUROLAMP_AAN;
 	               pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
 	            }   
-	            if (!pcMonitorsOnFlag)
+	            if ( (!pcMonitorsOnFlag) && pirMonitorsArmedFlag )
 	            {
 				   pirControlCode = SLAAPK_BEELDSCH_AAN;
 	               pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
@@ -672,14 +670,13 @@ void PirHandler::handlePirActivity()
 	            }   
 	            humanPresentFlag=true;
             }
-            inactivitySeconds=0; //once..
+            //activitySeconds=0; //once..
 	   	}
    }
 }
 
 void PirHandler::handlePirActions()
 {
-   int inactivityMinutes;
    unsigned long pirControlCode=0;
    const int waitTime = 60;  //1 minute
    unsigned long timeoutTime;
@@ -692,15 +689,11 @@ void PirHandler::handlePirActions()
    if (!pirActivityFlag)
    {
         Serial.println("No activity in last minute");
-        inactivityMinutes++;
-        if (inactivityMinutes >= 1)
-        {
-        }
+        humanPresentFlag=false;
    }
    else
    {
         Serial.println("Human activity in last minute");
-        inactivityMinutes = 0; //last should reset
 		timeoutTime = now()+(waitTime*3); //minutes 
 	    timeoutHour= hour(timeoutTime);
 	    timeoutMinute= minute(timeoutTime);
@@ -717,20 +710,7 @@ void PirHandler::handlePirActions()
         pirControlCode = SLAAPK_BUROLAMP_UIT;
         pirTimeoutList.writeCommand(pirControlCode,timeoutHour,timeoutMinute);
         //pirTimeoutList.listCommands();
-        inactivitySeconds=0;
-		inactivityMinutes=0; //last should reset
-		humanPresentFlag=false;
-        /*
-        //assume pc is on
-        pirControlCode = SLAAPK_BEELDSCH_AAN;
-        pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
-        //delay(300); 
-        pirControlCode = SLAAPK_BUROLAMP_AAN;
-        pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
-        //delay(3000);
-        pirControlCode = SLAAPK_TV_AAN;   
-        pirTimeoutList.writeCommand(pirControlCode,hour(),minute());
-		*/ 
+        activitySeconds=0;
    }
    pirActivityFlag = false;
    //return pirControlCode;
@@ -850,9 +830,10 @@ unsigned long processMessage(void) {
      Serial.print(timeoutMinute); 
      
      //W must be followed by C
-	 for (int i = 0; i < 3; i++)      //process space(s)
+	   for (int i = 0; i < 3; i++)      //process space(s)
      {
-        if ( (Serial.read() == *commandHeaderUc) || (Serial.read() == *commandHeaderLc) )
+        *header = Serial.read(); 
+        if ( (*header == *commandHeaderUc) || (*header == *commandHeaderLc) )
         {
            Serial.print(", command ");         
            controlCode =  Serial.parseInt();
@@ -869,9 +850,10 @@ unsigned long processMessage(void) {
       if( (*header == *commandHeaderUc) || (*header == *commandHeaderLc) )
       {
          controlCode = Serial.parseInt();
-	     if (controlCode == SLAAPK_BEELDSCH_UIT)
+         pirMonitorsArmedFlag = true;        //serial command means pc is on, monitors will be switched with pir
+	     if ( (controlCode == SLAAPK_BEELDSCH_UIT) || (controlCode == SLAAPK_BUROLAMP_UIT) )  //lamp off may be last, so do both
 		 {
-	        pcOnFlag= false;        //serial command means pc will shut down soon
+	        pirMonitorsArmedFlag = false;        //serial command means pc will shut down soon
 	     }
       }
   }
@@ -894,9 +876,6 @@ void loop() {
     Serial.print(timeOn);
     Serial.print(" & ");
     Serial.println(timeOff);
-
-    //dump list
-    Serial.println(" ");
     
     //handle pir result
     pir1.handlePirActions();
