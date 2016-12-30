@@ -39,6 +39,7 @@ bool bureauLampOnFlag=false;
 bool pcMonitorsOnFlag=false;
 bool tvOnFlag=false; 
 bool pirMonitorsArmedFlag=false;
+bool bovenViaPirDetected=false;
 
 //////////////////////////////////////////////////////////////////////////////
 // Class definitions
@@ -192,7 +193,7 @@ unsigned long ClockHandler::handle()
 {
     unsigned long event=0;
 
-	event = 0;
+    event = 0;
     //every 30 min write to EEPROM to let clock survive resets by PC
     if ( ( (minute() == 0) or (minute() == 30) ) and (second() <2) )   //only close to beginning of these minutes
     {  
@@ -219,32 +220,34 @@ unsigned long ClockHandler::handle()
     nov 17
     dec 16
     */
-    timeOn = TIME_HOUR_ON + int(6.5-abs(month()-6.5));
-    timeOff = TIME_HOUR_OFF;
-    if ( (hour() == timeOn) and (minute() == 0) and (second() < 5) ) 
+    if (!bovenViaPirDetected)
     {
-        event = HUISK_LAMP_KAST_AAN;
+      timeOn = TIME_HOUR_ON + int(6.5-abs(month()-6.5));
+      timeOff = TIME_HOUR_OFF;
+      if ( (hour() == timeOn) and (minute() == 0) and (second() < 5) ) 
+      {
+          event = HUISK_LAMP_KAST_AAN;
+      }
+      if ( (hour() == timeOff) and (minute() == 0) and (second() < 5) ) 
+      {  
+          event = HUISK_LAMP_KAST_UIT;
+      }
+      if ( (hour() == timeOn) and (minute() == 1) and (second() < 5) ) 
+      {
+          event = HUISK_KERSTBOOM_AAN;
+      }
+      if ( (hour() == timeOff) and (minute() == 1) and (second() < 5) ) 
+      {  
+          event = HUISK_KERSTBOOM_UIT;
+      }
     }
-    if ( (hour() == timeOff) and (minute() == 0) and (second() < 5) ) 
-    {  
-        event = HUISK_LAMP_KAST_UIT;
-    }
-    if ( (hour() == timeOn) and (minute() == 1) and (second() < 5) ) 
-    {
-        event = HUISK_KERSTBOOM_AAN;
-    }
-    if ( (hour() == timeOff) and (minute() == 1) and (second() < 5) ) 
-    {  
-        event = HUISK_KERSTBOOM_UIT;
-    }
-
     if (event == 0 )
     {
         EEpromList_Handler ReadTimeoutList(100,260);  //first/last EEprom address
         event = ReadTimeoutList.readCommand(hour(), minute());
-	    /*
-		if (event > 0 )
-	    {
+        /*
+        if (event > 0 )
+        {
            Serial.print(" do ");
            Serial.print(event);
         }
@@ -362,13 +365,13 @@ void PinDeviceHandler::setByCommand(unsigned long command)
             Serial.println(command);
         }
         if (command == 830)
-		{
-			bureauLampOnFlag = true;
-		}	
+        {
+            bureauLampOnFlag = true;
+        }   
         if (command == 831)
-		{
-			bureauLampOnFlag = false;
-		}	
+        {
+            bureauLampOnFlag = false;
+        }   
     }  
 }
 
@@ -414,18 +417,18 @@ void RFHandler::sendCommand(unsigned long controlCode)
       
       //keep tabs on some devices
       if (controlCode == SLAAPK_BEELDSCH_AAN)
-	  {
-		pcMonitorsOnFlag = true;	  	
+      {
+        pcMonitorsOnFlag = true;        
 
-		//delay(3000);
-		//controlCode = SLAAPK_TV_AAN;
-  		//MyIRTvDevice.sendCommand(controlCode);
-        //tvOnFlag=true;           	   
+        //delay(3000);
+        //controlCode = SLAAPK_TV_AAN;
+        //MyIRTvDevice.sendCommand(controlCode);
+        //tvOnFlag=true;               
       }
       if (controlCode == SLAAPK_BEELDSCH_UIT)
-	  {
-		pcMonitorsOnFlag = false;	  	
-        tvOnFlag=false;           	   
+      {
+        pcMonitorsOnFlag = false;       
+        tvOnFlag=false;                
       }
   }
 }
@@ -492,7 +495,7 @@ void EEpromList_Handler::writeCommand(unsigned long controlCodeW, int timeoutHou
          Serial.print(controlCodeW);      
          Serial.print(" written to timeout list on address ");      
          Serial.println(timeoutListAddress);  
-		 //listCommands();    
+         //listCommands();    
     }
 
 
@@ -508,7 +511,7 @@ unsigned long EEpromList_Handler::readCommand(int timeoutHour, int timeoutMinute
 
     readEvent=0;
     //check list
-    timeoutListAddress = seekCommand(0, timeoutHour, timeoutMinute, false);   //find a controlcode it is time for
+    timeoutListAddress = seekCommand(999999, timeoutHour, timeoutMinute, false);   //find a controlcode it is time for
     if (timeoutListAddress > 0)
     {
         EEPROM.get(timeoutListAddress, readEvent); 
@@ -566,21 +569,21 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
       EEPROM.get(timeoutListAddress+sizeof(unsigned long), timeoutListItemHour);
       EEPROM.get(timeoutListAddress+sizeof(unsigned long)+sizeof(int), timeoutListItemMinute);     
       
-      if ( (timeoutHour==0) && (timeoutMinute == 0) && (!printIt) && (slot==0) )  //first address not yest fount
+      if ( (timeoutHour==0) && (timeoutMinute == 0) && (!printIt) && (slot==0) )  //first address not used
       {
-	      if (timeoutListItemCommand==timeoutCommand )  //first item that matches timeoutCommand
-	      {
-	        slot = timeoutListAddress;
-	      }
-	  }  
-	  
-      if ( (timeoutCommand == 0) && (timeoutHour>0) && (timeoutMinute>0) && (!printIt) && (slot==0) ) // scan for commands with current time 
+          if (timeoutListItemCommand==timeoutCommand )  //first item that matches timeoutCommand
+          {
+            slot = timeoutListAddress;
+          }
+      }  
+      
+      if ( (timeoutCommand == 999999) && (!printIt) && (slot==0) ) // scan for commands (999999=unknown) with current time 
       {
           //Serial.print(timeoutListAddress);          
-	      if ( ( timeoutListItemHour == timeoutHour ) && ( timeoutListItemMinute == timeoutMinute ) && (timeoutListItemCommand > 0) )   //first real item that matches times
-	      {
+          if ( ( timeoutListItemHour == timeoutHour ) && ( timeoutListItemMinute == timeoutMinute ) && (timeoutListItemCommand > 0) )   //first real item that matches times
+          {
              slot = timeoutListAddress;
-		     /*
+             /*
              if ( timeoutListItemCommand > 0 )
              {
                    Serial.print("Found to do: ");
@@ -592,8 +595,8 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
                    Serial.print(" ");
              }
              */
-	      }
-	  }  
+          }
+      }  
 
       if (printIt && timeoutListItemCommand > 0)
       { 
@@ -640,38 +643,39 @@ void PirHandler::handlePirActivity()
 
    /*if ((analogRead(pin)>125))
    {
-   		Serial.print("A");
-   }  	
+        Serial.print("A");
+   }    
    */
    //Serial.print(analogRead(pin));
    if ((!pirActivityFlag) && (analogRead(pin)>125))
    {
-   		activitySeconds++;
+        activitySeconds++;
 
-        if (activitySeconds >= 55)   //30 picks up rf commands as activity 
+        if (activitySeconds >= 120)   //30 picks up rf commands as activity 
         {  
-   			Serial.print(" Activity ");
-	   		pirActivityFlag = true;
+                Serial.print(" Activity ");
+                pirActivityFlag = true;
+            bovenViaPirDetected = true;
             //assume pc is on
             if (!humanPresentFlag)
             {
-	            //send on command right away
-	            if (!bureauLampOnFlag)
-	            {
-	               pirControlCode = SLAAPK_BUROLAMP_AAN;
-	               pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
-	            }   
-	            if ( (!pcMonitorsOnFlag) && pirMonitorsArmedFlag )
-	            {
-				   pirControlCode = SLAAPK_BEELDSCH_AAN;
-	               pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
-	               pirControlCode = SLAAPK_TV_AAN;     //cases a built-in 3s delay
-   				   pirTimeoutList.writeCommand(pirControlCode,hour(),minute());
-	            }   
-	            humanPresentFlag=true;
+                //send on command right away
+                if (!bureauLampOnFlag)
+                {
+                   pirControlCode = SLAAPK_BUROLAMP_AAN;
+                   pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
+                }   
+                if ( (!pcMonitorsOnFlag) && pirMonitorsArmedFlag )
+                {
+                   pirControlCode = SLAAPK_BEELDSCH_AAN;
+                   pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
+                   pirControlCode = SLAAPK_TV_AAN;     //cases a built-in 3s delay
+                   pirTimeoutList.writeCommand(pirControlCode,hour(),minute());
+                }   
+                humanPresentFlag=true;
             }
             //activitySeconds=0; //once..
-	   	}
+        }
    }
 }
 
@@ -694,18 +698,18 @@ void PirHandler::handlePirActions()
    else
    {
         Serial.println("Human activity in last minute");
-		timeoutTime = now()+(waitTime*3); //minutes 
-	    timeoutHour= hour(timeoutTime);
-	    timeoutMinute= minute(timeoutTime);
+        timeoutTime = now()+(waitTime*3); //minutes 
+        timeoutHour= hour(timeoutTime);
+        timeoutMinute= minute(timeoutTime);
         pirControlCode = SLAAPK_BEELDSCH_UIT;
             
-		//pirControlCode = SLAAPK_BEELDSCH_AAN;
+        //pirControlCode = SLAAPK_BEELDSCH_AAN;
             
-		pirTimeoutList.writeCommand(pirControlCode,timeoutHour,timeoutMinute);
+        pirTimeoutList.writeCommand(pirControlCode,timeoutHour,timeoutMinute);
 
-		timeoutTime = now()+(waitTime*2); //minutes 
-	    timeoutHour= hour(timeoutTime);
-	    timeoutMinute= minute(timeoutTime);
+        timeoutTime = now()+(waitTime*2); //minutes 
+        timeoutHour= hour(timeoutTime);
+        timeoutMinute= minute(timeoutTime);
         //pirTimeoutList.listCommands();
         pirControlCode = SLAAPK_BUROLAMP_UIT;
         pirTimeoutList.writeCommand(pirControlCode,timeoutHour,timeoutMinute);
@@ -830,7 +834,7 @@ unsigned long processMessage(void) {
      Serial.print(timeoutMinute); 
      
      //W must be followed by C
-	   for (int i = 0; i < 3; i++)      //process space(s)
+       for (int i = 0; i < 3; i++)      //process space(s)
      {
         *header = Serial.read(); 
         if ( (*header == *commandHeaderUc) || (*header == *commandHeaderLc) )
@@ -851,10 +855,10 @@ unsigned long processMessage(void) {
       {
          controlCode = Serial.parseInt();
          pirMonitorsArmedFlag = true;        //serial command means pc is on, monitors will be switched with pir
-	     if ( (controlCode == SLAAPK_BEELDSCH_UIT) || (controlCode == SLAAPK_BUROLAMP_UIT) )  //lamp off may be last, so do both
-		 {
-	        pirMonitorsArmedFlag = false;        //serial command means pc will shut down soon
-	     }
+         if ( (controlCode == SLAAPK_BEELDSCH_UIT) || (controlCode == SLAAPK_BUROLAMP_UIT) )  //lamp off may be last, so do both
+         {
+            pirMonitorsArmedFlag = false;        //serial command means pc will shut down soon
+         }
       }
   }
 
@@ -887,9 +891,9 @@ void loop() {
   //check for time from pc or serial control command
   if (controlCode == 0)
   {
-	  if (Serial.available()) {
-	    controlCode=processMessage();
-	  }
+      if (Serial.available()) {
+        controlCode=processMessage();
+      }
   }
 
   Myclock.set(controlCode);  //set if received   
