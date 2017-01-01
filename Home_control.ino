@@ -35,11 +35,16 @@ IRsend irsend;
 
 unsigned long processMessage(void);
 
-bool bureauLampOnFlag=false;
-bool pcMonitorsOnFlag=false;
-bool tvOnFlag=false; 
-bool pirMonitorsArmedFlag=false;
-bool bovenViaPirDetected=false;
+bool bureauLampOnFlag=false;       //remember actual state of this device
+bool pcMonitorsOnFlag=false;       //remember actual state of this device
+bool tvOnFlag=false;               //remember actual state of this device
+bool bovenViaPirDetected=false;    //set permanently if pir activitySeconds >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
+bool pirMonitorsArmedFlag=false;   //receiving any serial command means pc is on, monitors will be switched with pir; set pirMonitorsArmedFlag 
+                                   //reset on SLAAPK_BEELDSCH_UIT || SLAAPK_BUROLAMP_UIT
+                                   //pirMonitorsArmedFlag only checked for "monitor on" actions. 
+								   //it's purpose is preventing monitor on if pc is off.
+								   //active (mon on pir on) after upper macro button (>>|)
+								   //inactive after lower macro button (|<<)
 
 //////////////////////////////////////////////////////////////////////////////
 // Class definitions
@@ -419,11 +424,6 @@ void RFHandler::sendCommand(unsigned long controlCode)
       if (controlCode == SLAAPK_BEELDSCH_AAN)
       {
         pcMonitorsOnFlag = true;        
-
-        //delay(3000);
-        //controlCode = SLAAPK_TV_AAN;
-        //MyIRTvDevice.sendCommand(controlCode);
-        //tvOnFlag=true;               
       }
       if (controlCode == SLAAPK_BEELDSCH_UIT)
       {
@@ -631,7 +631,6 @@ PirHandler::PirHandler(int p)  //constructor definition
 void PirHandler::init()
 {
   //pinMode(pin, INPUT);
-
 }
 
 void PirHandler::handlePirActivity()
@@ -651,10 +650,10 @@ void PirHandler::handlePirActivity()
    {
         activitySeconds++;
 
-        if (activitySeconds >= 120)   //30 picks up rf commands as activity 
+        if (activitySeconds >= 45)   //45 picks up rf commands as activity 
         {  
-                Serial.print(" Activity ");
-                pirActivityFlag = true;
+            Serial.print(" Activity ");
+            pirActivityFlag = true;
             bovenViaPirDetected = true;
             //assume pc is on
             if (!humanPresentFlag)
@@ -674,7 +673,6 @@ void PirHandler::handlePirActivity()
                 }   
                 humanPresentFlag=true;
             }
-            //activitySeconds=0; //once..
         }
    }
 }
@@ -834,7 +832,7 @@ unsigned long processMessage(void) {
      Serial.print(timeoutMinute); 
      
      //W must be followed by C
-       for (int i = 0; i < 3; i++)      //process space(s)
+     for (int i = 0; i < 3; i++)      //process space(s)
      {
         *header = Serial.read(); 
         if ( (*header == *commandHeaderUc) || (*header == *commandHeaderLc) )
@@ -921,6 +919,5 @@ void loop() {
   digitalWrite(13, HIGH);  // turn the LED on (HIGH is the voltage level)
   delay(100);
   digitalWrite(13, LOW);   // turn the LED off
-
 }
 
