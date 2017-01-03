@@ -497,8 +497,6 @@ void EEpromList_Handler::writeCommand(unsigned long controlCodeW, int timeoutHou
          Serial.println(timeoutListAddress);  
          //listCommands();    
     }
-
-
 }
 
 
@@ -636,6 +634,11 @@ void PirHandler::init()
 void PirHandler::handlePirActivity()
 {
    unsigned long pirControlCode=0;
+   const int waitTime = 60;  //1 minute
+   unsigned long timeoutTime;
+   int timeoutHour;
+   int timeoutMinute;
+   
          
    //Instantiate for use dfrom within pir objects
    EEpromList_Handler pirTimeoutList(100,260);  //first/last EEprom address
@@ -650,7 +653,7 @@ void PirHandler::handlePirActivity()
    {
         activitySeconds++;
 
-        if (activitySeconds >= 45)   //45 picks up rf commands as activity 
+        if (activitySeconds >= 20)   //20 picks up rf commands as activity 
         {  
             Serial.print(" Activity ");
             pirActivityFlag = true;
@@ -661,15 +664,35 @@ void PirHandler::handlePirActivity()
                 //send on command right away
                 if (!bureauLampOnFlag)
                 {
-                   pirControlCode = SLAAPK_BUROLAMP_AAN;
+                   //first replan off, present or not
+                   timeoutTime = now()+(waitTime*2); //minutes 
+                   timeoutHour= hour(timeoutTime);
+                   timeoutMinute= minute(timeoutTime);
+                   //pirTimeoutList.listCommands();
+                   pirControlCode = SLAAPK_BUROLAMP_UIT;
+				   pirTimeoutList.writeCommand(pirControlCode,timeoutHour,timeoutMinute);
+                   
+                   //plan immediately on
+				   pirControlCode = SLAAPK_BUROLAMP_AAN;
                    pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
                 }   
                 if ( (!pcMonitorsOnFlag) && pirMonitorsArmedFlag )
                 {
+                   //first replan off, present or not
+				   timeoutTime = now()+(waitTime*3); //minutes 
+                   timeoutHour= hour(timeoutTime);
+                   timeoutMinute= minute(timeoutTime);
+                   pirControlCode = SLAAPK_BEELDSCH_UIT;
+                   
+                   //plan immediately on
                    pirControlCode = SLAAPK_BEELDSCH_AAN;
                    pirTimeoutList.writeCommand(pirControlCode,hour(),minute()); 
                    pirControlCode = SLAAPK_TV_AAN;     //cases a built-in 3s delay
                    pirTimeoutList.writeCommand(pirControlCode,hour(),minute());
+            
+                   //pirControlCode = SLAAPK_BEELDSCH_AAN;
+            
+                   pirTimeoutList.writeCommand(pirControlCode,timeoutHour,timeoutMinute);
                 }   
                 humanPresentFlag=true;
             }
@@ -715,7 +738,6 @@ void PirHandler::handlePirActions()
         activitySeconds=0;
    }
    pirActivityFlag = false;
-   //return pirControlCode;
 }
       
 //end - This could be in a .cpp file
