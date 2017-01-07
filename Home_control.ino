@@ -1,7 +1,7 @@
 /*
     Control RF 433 Mhz devices, IR, relay and read/write EEprom
-    ERprom is used to store the time, reset_suppress and relay states, to survive short power outages
-    Reset on serial conenct is disabled by a 50 ohm resistor on i/o pin (12)
+    EEprom is used to store the time, reset_suppress and relay states, to survive short power outages
+    Reset on serial connect is disabled by a 50 ohm resistor on i/o pin (12)
 
     Connect the RF transmitter to digital pin 2, and the IR led to pin 3
 
@@ -19,7 +19,7 @@ IRsend irsend;
 
 /*-----( Declare Constants )-----*/
 #define TIME_HOUR_ON    15         //per month a correction is added
-#define TIME_HOUR_OFF    23
+#define TIME_HOUR_OFF   23
 
 //Timed devices
 #define HUISK_LAMP_KAST_AAN             4478259
@@ -31,19 +31,21 @@ IRsend irsend;
 #define SLAAPK_BEELDSCH_AAN             4474193
 #define SLAAPK_BEELDSCH_UIT             4474196
 #define SLAAPK_TV_AAN                   200
+#define SLAAPK_KACHEL_AAN               4478723
+#define SLAAPK_KACHEL_UIT               4478732
 
 unsigned long processMessage(void);
 
 bool bureauLampOnFlag = false;         //remember actual state of this device
 bool pcMonitorsOnFlag = false;         //remember actual state of this device
-bool tvOnFlag = false;                         //remember actual state of this device
-bool bovenViaPirDetected = false;    //set permanently if pir activitySeconds >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
-bool pirMonitorsArmedFlag = false; //receiving any serial command means pc is on, monitors will be switched with pir; set pirMonitorsArmedFlag
-//reset on SLAAPK_BEELDSCH_UIT || SLAAPK_BUROLAMP_UIT
-//pirMonitorsArmedFlag only checked for "monitor on" actions.
-//it's purpose is preventing monitor on if pc is off.
-//active (mon on pir on) after upper macro button (>>|)
-//inactive after lower macro button (|<<)
+bool tvOnFlag = false;                 //remember actual state of this device
+bool bovenViaPirDetected = false;      //set permanently if pir activitySeconds >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
+bool pirMonitorsArmedFlag = false;     /*receiving any serial command means pc is on, monitors will be switched with pir; set pirMonitorsArmedFlag
+                                       //reset on SLAAPK_BEELDSCH_UIT || SLAAPK_BUROLAMP_UIT
+                                       //pirMonitorsArmedFlag only checked for "monitor on" actions.
+                                       //it's purpose is preventing monitor on if pc is off.
+                                       //active (mon on pir on) after upper macro button (>>|)
+                                       //inactive after lower macro button (|<<) */
 
 //////////////////////////////////////////////////////////////////////////////
 // Class definitions
@@ -341,7 +343,7 @@ void PinDeviceHandler::setByCommand(unsigned long command)
     }
     if ( command == codeForOff )
     {
-      pinMode(outputPin, INPUT);    //pulling the resetpin down is not a good idea....
+      pinMode(outputPin, INPUT);  //pulling the resetpin down is not a good idea....
       digitalWrite(outputPin, 0); // set the ResetSuppressPin OFF
       Serial.print("Controlled ResetSuppressPin\n");
       EEPROM.put(EEpromAddress, command);
@@ -419,11 +421,8 @@ void RFHandler::sendCommand(unsigned long rfControlCode)
     }
     Serial.print("Sending RF command: ");
     Serial.print(rfControlCode);
-    for (int i = 0; i < 1; i++)
-    {
-      mySwitch.send(rfControlCode, 24);
-      delay(300);
-    }
+    mySwitch.send(rfControlCode, 24);
+
     //keep tabs on some devices
     if (rfControlCode == SLAAPK_BEELDSCH_AAN)
     {
@@ -525,13 +524,13 @@ unsigned long EEpromList_Handler::readCommand(int timeoutHour, int timeoutMinute
     EEPROM.put(timeoutListAddress + sizeof(unsigned long) + sizeof(int), twoBytes);
   }
   /*
-          if (readEvent > 0 )
-          {
-                  Serial.print("Found slot : ");
-                  Serial.print(timeoutListAddress);
-                  Serial.print("Found action : ");
-                  Serial.println (readEvent);
-          }
+  if (readEvent > 0 )
+  {
+          Serial.print("Found slot : ");
+          Serial.print(timeoutListAddress);
+          Serial.print("Found action : ");
+          Serial.println (readEvent);
+  }
   */
   return readEvent;
 }
@@ -586,16 +585,16 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
       {
         slot = timeoutListAddress;
         /*
-            if ( timeoutListItemCommand > 0 )
-            {
-                    Serial.print("Found to do: ");
-                    Serial.print(timeoutMinute);
-                    Serial.print(" ");
-                    Serial.print(timeoutListItemMinute );
-                    Serial.print(" ");
-                    Serial.print(timeoutListItemCommand);
-                    Serial.print(" ");
-            }
+        if ( timeoutListItemCommand > 0 )
+        {
+           Serial.print("Found to do: ");
+           Serial.print(timeoutMinute);
+           Serial.print(" ");
+           Serial.print(timeoutListItemMinute );
+           Serial.print(" ");
+           Serial.print(timeoutListItemCommand);
+           Serial.print(" ");
+        }
         */
       }
     }
@@ -613,12 +612,12 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
       Serial.println(twoBytes);
 
       /*
-          ///Now erase the item     - on time only
-          const unsigned long fourBytes=0;
-          const int twoBytes=0;
-          EEPROM.put(timeoutListAddress, fourBytes);
-          EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
-          EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
+      ///Now erase the item     - on time only
+      const unsigned long fourBytes=0;
+      const int twoBytes=0;
+      EEPROM.put(timeoutListAddress, fourBytes);
+      EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
+      EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
       */
     }
   }
@@ -647,10 +646,11 @@ void PirHandler::handlePirActivity()
   //Instantiate for use dfrom within pir objects
   EEpromList_Handler pirTimeoutList(100, 260); //first/last EEprom address
 
-  /*if ((analogRead(pin)>125))
-      {
-           Serial.print("A");
-      }
+  /*
+  if ((analogRead(pin)>125))
+  {
+    Serial.print("A");
+  }
   */
   //Serial.print(analogRead(pin));
   if ((!pirActivityFlag) && (analogRead(pin) > 125))
@@ -681,6 +681,16 @@ void PirHandler::handlePirActivity()
 
           //plan immediately on
           pirControlCode = SLAAPK_BUROLAMP_AAN;
+          pirTimeoutList.writeCommand(pirControlCode, hour(), minute());
+
+          timeoutTime = now() + (waitTime * 20); //minutes
+          timeoutHour = hour(timeoutTime);
+          timeoutMinute = minute(timeoutTime);
+          pirControlCode = SLAAPK_KACHEL_UIT;
+          pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+
+          //plan immediately on
+          pirControlCode = SLAAPK_KACHEL_AAN;
           pirTimeoutList.writeCommand(pirControlCode, hour(), minute());
         }
         if ( (!pcMonitorsOnFlag) && pirMonitorsArmedFlag )
@@ -740,6 +750,13 @@ void PirHandler::handlePirActions()
     pirControlCode = SLAAPK_BUROLAMP_UIT;
     pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
     //pirTimeoutList.listCommands();
+
+    timeoutTime = now() + (waitTime * 20); //minutes
+    timeoutHour = hour(timeoutTime);
+    timeoutMinute = minute(timeoutTime);
+    pirControlCode = SLAAPK_KACHEL_UIT;
+    pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+
     activitySeconds = 0;
   }
   pirActivityFlag = false;
@@ -940,8 +957,10 @@ void loop() {
   MyIRDevices.sendCommand(controlCode);
   MyRFDevices.sendCommand(controlCode);
   pir1.handlePirActivity();
-  // Need interrupts for delay()
-  interrupts();
+
+  // Need interrupts for delay()?
+  //interrupts();
+
   delay(100);
   digitalWrite(13, HIGH);    // turn the LED on (HIGH is the voltage level)
   delay(100);
