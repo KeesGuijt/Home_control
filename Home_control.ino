@@ -1,8 +1,7 @@
 /*
     Control RF 433 Mhz devices, IR, relay and read/write EEprom
-    EEprom is used to store the time, reset_suppress and relay states, to survive short power outages
+    EEprom is used to store the time, reset_suppress and relay states, to survive short power outages. EEprom is also used to store an action list (timed commands)
     Reset on serial connect is disabled by a 50 ohm resistor on i/o pin (12)
-
     Connect the RF transmitter to digital pin 2, and the IR led to pin 3
 
 
@@ -39,7 +38,7 @@ unsigned long processMessage(void);
 bool bureauLampOnFlag = false;         //remember actual state of this device
 bool pcMonitorsOnFlag = false;         //remember actual state of this device
 bool tvOnFlag = false;                 //remember actual state of this device
-bool bovenViaPirDetected = false;      //set permanently if pir activitySeconds >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
+bool bovenViaPirDetected = false;      //set permanently if pir activitySamples >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
 bool pirMonitorsArmedFlag = false;     /*receiving any serial command means pc is on, monitors will be switched with pir; set pirMonitorsArmedFlag
                                        //reset on SLAAPK_BEELDSCH_UIT || SLAAPK_BUROLAMP_UIT
                                        //pirMonitorsArmedFlag only checked for "monitor on" actions.
@@ -70,7 +69,7 @@ class ClockHandler {        //"pre-declaration"
     const int EEpromAddress;                     // pin to which button is connected
     unsigned long pctime;
     const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
-    //2016-12-14 10:49:16    T1481712556
+    //example: 2016-12-14 10:49:16 = T1481712556
     int timeOn = 0;
     int timeOff = 0;
 };
@@ -84,7 +83,7 @@ class PinDeviceHandler {        //"pre-declaration"
     void init();
     //read eeprom, set pin
 
-    //by command, to be called in the loop()
+    //by command, to be called in the loop
     void setByCommand(unsigned long command);
 
   private:
@@ -95,7 +94,6 @@ class PinDeviceHandler {        //"pre-declaration"
 #define RELAY_ON 0
 #define RELAY_OFF 1
 };
-
 
 class RFHandler {        //"pre-declaration"
   public:
@@ -134,7 +132,7 @@ class EEpromList_Handler {        //"pre-declaration"
 
     // Handler, to be called in the loop()
     void writeCommand(unsigned long controlCodeW, int timeoutHour, int timeoutMinute);
-    unsigned long readCommand(int timeoutHour, int timeoutMinute);         //return event
+    unsigned long readCommand();         //return event
     void listCommands(void);
 
   private:
@@ -153,17 +151,18 @@ class PirHandler {        //"pre-declaration"
     // Initialization done after construction, to permit static instances
     void init();
 
-    // Handler, to be called in the loop()
+    // suppress, to be called by RF and Pin devices
+    void suppressPirActivity();
+    // Handler, to be called in the loop 5Hz
     void handlePirActivity();
-    // Handler, to be called in the loop()
+    // Handler, to be called in the loop 1Hz
     void handlePirActions();
 
-  protected:
+  private:
     const int pin;                     // pin to which pir is connected
     bool pirActivityFlag;
-    int activitySeconds;
+    int activitySamples;
     bool humanPresentFlag;
-
 };
 
 
@@ -178,6 +177,28 @@ class PirHandler {        //"pre-declaration"
 //#include "HomeControl.h"
 
 //member definitions
+
+//////////////////////////////////////////////////////////////////////////////
+
+// Instantiate objects
+ClockHandler Myclock(0); //first EEprom address
+EEpromList_Handler timeoutList(100, 260); //first/last EEprom address
+PinDeviceHandler ResetSuppress(12, sizeof(unsigned long) * 1, 100, 101);
+PinDeviceHandler Relay0(4, sizeof(unsigned long) * 2, 800, 801);
+PinDeviceHandler Relay1(5, sizeof(unsigned long) * 3, 810, 811);
+PinDeviceHandler Relay2(6, sizeof(unsigned long) * 4, 820, 821);
+PinDeviceHandler Relay3(7, sizeof(unsigned long) * 5, 830, 831);
+PinDeviceHandler Relay4(8, sizeof(unsigned long) * 6, 840, 841);
+PinDeviceHandler Relay5(9, sizeof(unsigned long) * 7, 850, 851);
+PinDeviceHandler Relay6(10, sizeof(unsigned long) * 8, 860, 861);
+PinDeviceHandler Relay7(11, sizeof(unsigned long) * 9, 870, 871);
+RFHandler MyRFDevices(2); //pin numbr
+IR_Handler MyIRDevices(3);
+PirHandler pir1(A0);
+//pin 13 free
+//a0..a7 free
+
+
 
 ClockHandler::ClockHandler(int EEAddress)    //constructor definition
   :    EEpromAddress(EEAddress)
@@ -249,14 +270,14 @@ unsigned long ClockHandler::handle()
   }
   if (event == 0 )
   {
-    EEpromList_Handler ReadTimeoutList(100, 260); //first/last EEprom address
-    event = ReadTimeoutList.readCommand(hour(), minute());
+    EEpromList_Handler ReadtimeoutList(100, 260); //first/last EEprom address
+    event = ReadtimeoutList.readCommand();
     /*
-        if (event > 0 )
-        {
-         Serial.print(" do ");
-         Serial.print(event);
-        }
+      if (event > 0 )
+      {
+      Serial.print(" do ");
+      Serial.print(event);
+      }
     */
   }
   return event;
@@ -280,6 +301,7 @@ PinDeviceHandler::PinDeviceHandler(int o_pin, int EEAddress, unsigned long codeO
 
 void PinDeviceHandler::init()
 {
+
   //get state from EEprom, set pin
   unsigned long command = 0;
   EEPROM.get(EEpromAddress, command);
@@ -325,7 +347,7 @@ void PinDeviceHandler::init()
       Serial.print("Controlled relay ");
       Serial.println(command);
     }
-    delay(1000); // wait to ignore spikes picked up by PIR
+    pir1.suppressPirActivity();
   }
 }
 
@@ -371,7 +393,8 @@ void PinDeviceHandler::setByCommand(unsigned long command)
       Serial.print("Written relay state to EEPROM ");
       Serial.println(command);
     }
-    delay(1000); // wait to ignore spikes picked up by PIR
+    pir1.suppressPirActivity();
+
     if (command == 830)
     {
       bureauLampOnFlag = true;
@@ -400,9 +423,6 @@ void RFHandler::init()
 
 void RFHandler::sendCommand(unsigned long rfControlCode)
 {
-  //IR_Handler MyIRTvDevice(3);
-
-
   //set RF pulselength and send if needed
   if ( (rfControlCode > 881) && (rfControlCode < 1482313385) )
   {
@@ -423,10 +443,14 @@ void RFHandler::sendCommand(unsigned long rfControlCode)
     Serial.print(rfControlCode);
     mySwitch.send(rfControlCode, 24);
 
+    pir1.suppressPirActivity();
+
     //keep tabs on some devices
     if (rfControlCode == SLAAPK_BEELDSCH_AAN)
     {
       pcMonitorsOnFlag = true;
+      rfControlCode = SLAAPK_TV_AAN;         //causes a built-in 3s delay. run after SLAAPK_BEELDSCH_AAN
+      timeoutList.writeCommand(rfControlCode, -1, -1); // meaning "do immediately"
     }
     if (rfControlCode == SLAAPK_BEELDSCH_UIT)
     {
@@ -446,7 +470,7 @@ void IR_Handler::sendCommand(unsigned long irControlCode)
   //send IR if needed
   if ( (irControlCode == 200) )
   {
-    delay(5000);        //wait for tv to power on
+    delay(5000);        //wait for tv to startup after power on
     for (int i = 0; i < 3; i++) {
       irsend.sendNEC(0x10EFA05F, 32); // Telefunken TV power code
       delay(40);
@@ -503,7 +527,7 @@ void EEpromList_Handler::writeCommand(unsigned long controlCodeW, int timeoutHou
 }
 
 
-unsigned long EEpromList_Handler::readCommand(int timeoutHour, int timeoutMinute)            //return event
+unsigned long EEpromList_Handler::readCommand()            //return event
 {
 
   unsigned long readEvent = 0;
@@ -512,7 +536,11 @@ unsigned long EEpromList_Handler::readCommand(int timeoutHour, int timeoutMinute
 
   readEvent = 0;
   //check list
-  timeoutListAddress = seekCommand(999999, timeoutHour, timeoutMinute, false);     //find a controlcode it is time for
+  timeoutListAddress = seekCommand(999999, -1, -1, false);     //find a controlcode labelled: "do immediately"
+  if (timeoutListAddress == 0)
+  {
+    timeoutListAddress = seekCommand(999999, hour(), minute(), false);     //find a controlcode it is time for
+  }
   if (timeoutListAddress > 0)
   {
     EEPROM.get(timeoutListAddress, readEvent);
@@ -524,13 +552,13 @@ unsigned long EEpromList_Handler::readCommand(int timeoutHour, int timeoutMinute
     EEPROM.put(timeoutListAddress + sizeof(unsigned long) + sizeof(int), twoBytes);
   }
   /*
-  if (readEvent > 0 )
-  {
-          Serial.print("Found slot : ");
-          Serial.print(timeoutListAddress);
-          Serial.print("Found action : ");
-          Serial.println (readEvent);
-  }
+    if (readEvent > 0 )
+    {
+    Serial.print("Found slot : ");
+    Serial.print(timeoutListAddress);
+    Serial.print("Found action : ");
+    Serial.println (readEvent);
+    }
   */
   return readEvent;
 }
@@ -585,16 +613,16 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
       {
         slot = timeoutListAddress;
         /*
-        if ( timeoutListItemCommand > 0 )
-        {
-           Serial.print("Found to do: ");
-           Serial.print(timeoutMinute);
-           Serial.print(" ");
-           Serial.print(timeoutListItemMinute );
-           Serial.print(" ");
-           Serial.print(timeoutListItemCommand);
-           Serial.print(" ");
-        }
+          if ( timeoutListItemCommand > 0 )
+          {
+          Serial.print("Found to do: ");
+          Serial.print(timeoutMinute);
+          Serial.print(" ");
+          Serial.print(timeoutListItemMinute );
+          Serial.print(" ");
+          Serial.print(timeoutListItemCommand);
+          Serial.print(" ");
+          }
         */
       }
     }
@@ -612,12 +640,12 @@ int EEpromList_Handler::seekCommand(unsigned long timeoutCommand, int timeoutHou
       Serial.println(twoBytes);
 
       /*
-      ///Now erase the item     - on time only
-      const unsigned long fourBytes=0;
-      const int twoBytes=0;
-      EEPROM.put(timeoutListAddress, fourBytes);
-      EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
-      EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
+        ///Now erase the item     - on time only
+        const unsigned long fourBytes=0;
+        const int twoBytes=0;
+        EEPROM.put(timeoutListAddress, fourBytes);
+        EEPROM.put(timeoutListAddress+sizeof(unsigned long), twoBytes);
+        EEPROM.put(timeoutListAddress+sizeof(unsigned long)+sizeof(int), twoBytes);
       */
     }
   }
@@ -634,6 +662,24 @@ void PirHandler::init()
   //pinMode(pin, INPUT);
 }
 
+
+void PirHandler::suppressPirActivity()   //prevent PIR detection caused by pin or RF actions (interference)
+{
+  if (!pirActivityFlag)     //only prevent detection when not already detected
+  {
+    delay(100); // wait for slow responses if any
+    for (int i = 0; i < 60; i++)  //hardware creates ~4 sec Active after a trigger, in this case interference
+    {
+      delay(100);
+      Serial.print("A");
+      if (analogRead(pin) < 125)
+      {
+        break;  //exit as soon PIR is silent again
+      }
+    }
+  }
+}
+
 void PirHandler::handlePirActivity()
 {
   unsigned long pirControlCode = 0;
@@ -642,28 +688,25 @@ void PirHandler::handlePirActivity()
   int timeoutHour;
   int timeoutMinute;
 
-
-  //Instantiate for use dfrom within pir objects
-  EEpromList_Handler pirTimeoutList(100, 260); //first/last EEprom address
-
   /*
-  if ((analogRead(pin)>125))
-  {
+    if ((analogRead(pin)>125))
+    {
     Serial.print("A");
-  }
+    }
   */
   //Serial.print(analogRead(pin));
-  if ((!pirActivityFlag) && (analogRead(pin) > 125))
+  if ((!humanPresentFlag) && (analogRead(pin) > 125))
   {
-    activitySeconds++;
+    activitySamples++;
 
-    if (activitySeconds >= 20)     //20 picks up rf commands as activity
+    //step 1: Burolamp and Kachel - make shure monitor goes last
+    if ((!pirActivityFlag) && (activitySamples == 5))     //5 times ~ 1 sec; counts as activity
     {
       Serial.print(" Activity - pirMonitorsArmedFlag: ");
       Serial.print(pirMonitorsArmedFlag);
       Serial.print(" pcMonitorsOnFlag: ");
       Serial.println(pcMonitorsOnFlag);
-      pirActivityFlag = true;
+      pirActivityFlag = true;   //step 1
       bovenViaPirDetected = true;
       //assume pc is on
       if (!humanPresentFlag)
@@ -675,24 +718,30 @@ void PirHandler::handlePirActivity()
           timeoutTime = now() + (waitTime * 2); //minutes
           timeoutHour = hour(timeoutTime);
           timeoutMinute = minute(timeoutTime);
-          //pirTimeoutList.listCommands();
+          //timeoutList.listCommands();
           pirControlCode = SLAAPK_BUROLAMP_UIT;
-          pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+          timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
 
           //plan immediately on
           pirControlCode = SLAAPK_BUROLAMP_AAN;
-          pirTimeoutList.writeCommand(pirControlCode, hour(), minute());
+          timeoutList.writeCommand(pirControlCode, -1, -1); // "do immediately"
 
           timeoutTime = now() + (waitTime * 20); //minutes
           timeoutHour = hour(timeoutTime);
           timeoutMinute = minute(timeoutTime);
           pirControlCode = SLAAPK_KACHEL_UIT;
-          pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+          timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
 
           //plan immediately on
           pirControlCode = SLAAPK_KACHEL_AAN;
-          pirTimeoutList.writeCommand(pirControlCode, hour(), minute());
+          timeoutList.writeCommand(pirControlCode, -1, -1);  // "do immediately"
         }
+      }
+    }
+    else if (pirActivityFlag && (activitySamples >= 7))     //step2: beeldscherm  after two actions
+    {
+      if (!humanPresentFlag)
+      {
         if ( (!pcMonitorsOnFlag) && pirMonitorsArmedFlag )
         {
           //first replan off, present or not
@@ -703,13 +752,11 @@ void PirHandler::handlePirActivity()
 
           //plan immediately on
           pirControlCode = SLAAPK_BEELDSCH_AAN;
-          pirTimeoutList.writeCommand(pirControlCode, hour(), minute());
-          pirControlCode = SLAAPK_TV_AAN;         //cases a built-in 3s delay
-          pirTimeoutList.writeCommand(pirControlCode, hour(), minute());
+          timeoutList.writeCommand(pirControlCode, -1, -1);
 
-          pirTimeoutList.listCommands();
+          timeoutList.listCommands();
         }
-        humanPresentFlag = true;
+        humanPresentFlag = true;  //step 2
       }
     }
   }
@@ -723,9 +770,6 @@ void PirHandler::handlePirActions()
   int timeoutHour;
   int timeoutMinute;
 
-  //Instantiate for use dfrom within pir objects
-  EEpromList_Handler pirTimeoutList(100, 260); //first/last EEprom address
-
   if (!pirActivityFlag)
   {
     Serial.println("No activity in last minute");
@@ -734,6 +778,8 @@ void PirHandler::handlePirActions()
   else
   {
     Serial.println("Human activity in last minute");
+
+    //reschedule off actions
     timeoutTime = now() + (waitTime * 3); //minutes
     timeoutHour = hour(timeoutTime);
     timeoutMinute = minute(timeoutTime);
@@ -741,23 +787,23 @@ void PirHandler::handlePirActions()
 
     //pirControlCode = SLAAPK_BEELDSCH_AAN;
 
-    pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+    timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
 
     timeoutTime = now() + (waitTime * 2); //minutes
     timeoutHour = hour(timeoutTime);
     timeoutMinute = minute(timeoutTime);
-    //pirTimeoutList.listCommands();
+    //timeoutList.listCommands();
     pirControlCode = SLAAPK_BUROLAMP_UIT;
-    pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
-    //pirTimeoutList.listCommands();
+    timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+    //timeoutList.listCommands();
 
     timeoutTime = now() + (waitTime * 20); //minutes
     timeoutHour = hour(timeoutTime);
     timeoutMinute = minute(timeoutTime);
     pirControlCode = SLAAPK_KACHEL_UIT;
-    pirTimeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+    timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
 
-    activitySeconds = 0;
+    activitySamples = 0;
   }
   pirActivityFlag = false;
 }
@@ -765,26 +811,6 @@ void PirHandler::handlePirActions()
 //end - This could be in a .cpp file
 
 
-
-//////////////////////////////////////////////////////////////////////////////
-
-// Instantiate objects
-ClockHandler Myclock(0); //first EEprom address
-EEpromList_Handler TimeoutList(100, 260); //first/last EEprom address
-PinDeviceHandler ResetSuppress(12, sizeof(unsigned long) * 1, 100, 101);
-PinDeviceHandler Relay0(4, sizeof(unsigned long) * 2, 800, 801);
-PinDeviceHandler Relay1(5, sizeof(unsigned long) * 3, 810, 811);
-PinDeviceHandler Relay2(6, sizeof(unsigned long) * 4, 820, 821);
-PinDeviceHandler Relay3(7, sizeof(unsigned long) * 5, 830, 831);
-PinDeviceHandler Relay4(8, sizeof(unsigned long) * 6, 840, 841);
-PinDeviceHandler Relay5(9, sizeof(unsigned long) * 7, 850, 851);
-PinDeviceHandler Relay6(10, sizeof(unsigned long) * 8, 860, 861);
-PinDeviceHandler Relay7(11, sizeof(unsigned long) * 9, 870, 871);
-RFHandler MyRFDevices(2); //pin numbr
-IR_Handler MyIRDevices(3);
-PirHandler pir1(A0);
-//pin 13 free
-//a0..a7 free
 
 
 void setup()    {
@@ -813,7 +839,7 @@ void setup()    {
   digitalClockDisplay();
 
   //dump timeout list
-  TimeoutList.listCommands();
+  timeoutList.listCommands();
 }
 
 void digitalClockDisplay() {
@@ -887,7 +913,7 @@ unsigned long processMessage(void) {
         Serial.println (" ");
       }
     }
-    TimeoutList.writeCommand(controlCode, timeoutHour, timeoutMinute);
+    timeoutList.writeCommand(controlCode, timeoutHour, timeoutMinute);
 
     controlCode = 0; //no command right now
   }
@@ -922,11 +948,9 @@ void loop() {
     Serial.print(timeOn);
     Serial.print(" & ");
     Serial.println(timeOff);
-
     //handle pir result
     pir1.handlePirActions();
-    //controlCode=Myclock.handle();     //get timed commands
-    TimeoutList.listCommands();
+    timeoutList.listCommands();
     delay(1000); //limit output
   }
 
@@ -957,9 +981,6 @@ void loop() {
   MyIRDevices.sendCommand(controlCode);
   MyRFDevices.sendCommand(controlCode);
   pir1.handlePirActivity();
-
-  // Need interrupts for delay()?
-  //interrupts();
 
   delay(100);
   digitalWrite(13, HIGH);    // turn the LED on (HIGH is the voltage level)
