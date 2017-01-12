@@ -37,6 +37,7 @@ unsigned long processMessage(void);
 
 bool bureauLampOnFlag = false;         //remember actual state of this device
 bool pcMonitorsOnFlag = false;         //remember actual state of this device
+bool kachelOnFlag = false;            //remember actual state of this device
 bool tvOnFlag = false;                 //remember actual state of this device
 bool bovenViaPirDetected = false;      //set permanently if pir activitySamples >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
 bool pirMonitorsArmedFlag = false;     /*receiving any serial command means pc is on, monitors will be switched with pir; set pirMonitorsArmedFlag
@@ -442,6 +443,7 @@ void RFHandler::sendCommand(unsigned long rfControlCode)
     Serial.print("Sending RF command: ");
     Serial.print(rfControlCode);
     mySwitch.send(rfControlCode, 24);
+    Serial.println("");
 
     pir1.suppressPirActivity();
 
@@ -456,6 +458,14 @@ void RFHandler::sendCommand(unsigned long rfControlCode)
     {
       pcMonitorsOnFlag = false;
       tvOnFlag = false;
+    }
+    if (rfControlCode == SLAAPK_KACHEL_AAN)
+    {
+      kachelOnFlag = true;
+    }
+    if (rfControlCode == SLAAPK_KACHEL_UIT)
+    {
+      kachelOnFlag = false;
     }
   }
 }
@@ -725,16 +735,15 @@ void PirHandler::handlePirActivity()
           //plan immediately on
           pirControlCode = SLAAPK_BUROLAMP_AAN;
           timeoutList.writeCommand(pirControlCode, -1, -1); // "do immediately"
-
-          timeoutTime = now() + (waitTime * 20); //minutes
-          timeoutHour = hour(timeoutTime);
-          timeoutMinute = minute(timeoutTime);
-          pirControlCode = SLAAPK_KACHEL_UIT;
-          timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
-
-          //plan immediately on
-          pirControlCode = SLAAPK_KACHEL_AAN;
-          timeoutList.writeCommand(pirControlCode, -1, -1);  // "do immediately"
+        }
+        if ( pirMonitorsArmedFlag )
+        {
+          if ( !kachelOnFlag )
+          {
+            //plan immediately on
+            pirControlCode = SLAAPK_KACHEL_AAN;
+            timeoutList.writeCommand(pirControlCode, -1, -1);  // "do immediately"
+          }
         }
       }
     }
@@ -797,12 +806,14 @@ void PirHandler::handlePirActions()
     timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
     //timeoutList.listCommands();
 
-    timeoutTime = now() + (waitTime * 20); //minutes
-    timeoutHour = hour(timeoutTime);
-    timeoutMinute = minute(timeoutTime);
-    pirControlCode = SLAAPK_KACHEL_UIT;
-    timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
-
+    if ( kachelOnFlag )
+     {
+       timeoutTime = now() + (waitTime * 20); //minutes
+       timeoutHour = hour(timeoutTime);
+       timeoutMinute = minute(timeoutTime);
+       pirControlCode = SLAAPK_KACHEL_UIT;
+       timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+    }
     activitySamples = 0;
   }
   pirActivityFlag = false;
