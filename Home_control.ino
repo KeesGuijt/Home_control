@@ -27,8 +27,8 @@ IRsend irsend;
 #define HUISK_KERSTBOOM_UIT             4478412
 #define SLAAPK_BUROLAMP_AAN             830
 #define SLAAPK_BUROLAMP_UIT             831
-#define SLAAPK_BEELDSCH_AAN             4474193
-#define SLAAPK_BEELDSCH_UIT             4474196
+#define SLAAPK_BEELDSCH_AAN             16405
+#define SLAAPK_BEELDSCH_UIT             16404
 #define SLAAPK_TV_AAN                   200
 #define SLAAPK_KACHEL_AAN               4478723
 #define SLAAPK_KACHEL_UIT               4478732
@@ -40,9 +40,9 @@ bool pcMonitorsOnFlag = false;         //remember actual state of this device
 bool kachelOnFlag = false;            //remember actual state of this device
 bool tvOnFlag = false;                 //remember actual state of this device
 bool bovenViaPirDetected = false;      //set permanently if pir activitySamples >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
-bool pirMonitorsArmedFlag = false;     /*receiving any serial command means pc is on, monitors will be switched with pir; set pirMonitorsArmedFlag
+bool pirArmedFlag = false;     /*receiving any serial command means pc is on, monitors will be switched with pir; set pirArmedFlag
                                        //reset on SLAAPK_BEELDSCH_UIT || SLAAPK_BUROLAMP_UIT
-                                       //pirMonitorsArmedFlag only checked for "monitor on" actions.
+                                       //pirArmedFlag only checked for "monitor on" actions.
                                        //it's purpose is preventing monitor on if pc is off.
                                        //active (mon on pir on) after upper macro button (>>|)
                                        //inactive after lower macro button (|<<) */
@@ -712,8 +712,8 @@ void PirHandler::handlePirActivity()
     //step 1: Burolamp and Kachel - make shure monitor goes last
     if ((!pirActivityFlag) && (activitySamples == 5))     //5 times ~ 1 sec; counts as activity
     {
-      Serial.print(" Activity - pirMonitorsArmedFlag: ");
-      Serial.print(pirMonitorsArmedFlag);
+      Serial.print(" Activity - pirArmedFlag: ");
+      Serial.print(pirArmedFlag);
       Serial.print(" pcMonitorsOnFlag: ");
       Serial.println(pcMonitorsOnFlag);
       pirActivityFlag = true;   //step 1
@@ -721,23 +721,24 @@ void PirHandler::handlePirActivity()
       //assume pc is on
       if (!humanPresentFlag)
       {
-        //send on command right away
-        if (!bureauLampOnFlag)
+        if ( pirArmedFlag )
         {
-          //first replan off, present or not
-          timeoutTime = now() + (waitTime * 2); //minutes
-          timeoutHour = hour(timeoutTime);
-          timeoutMinute = minute(timeoutTime);
-          //timeoutList.listCommands();
-          pirControlCode = SLAAPK_BUROLAMP_UIT;
-          timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
-
-          //plan immediately on
-          pirControlCode = SLAAPK_BUROLAMP_AAN;
-          timeoutList.writeCommand(pirControlCode, -1, -1); // "do immediately"
-        }
-        if ( pirMonitorsArmedFlag )
-        {
+          //send on command right away
+          if (!bureauLampOnFlag)
+          {
+          /*
+		    //first replan off, present or not
+            timeoutTime = now() + (waitTime * 2); //minutes
+            timeoutHour = hour(timeoutTime);
+            timeoutMinute = minute(timeoutTime);
+            //timeoutList.listCommands();
+            pirControlCode = SLAAPK_BUROLAMP_UIT;
+            timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+		  */
+            //plan immediately on
+            pirControlCode = SLAAPK_BUROLAMP_AAN;
+            timeoutList.writeCommand(pirControlCode, -1, -1); // "do immediately"
+          }
           if ( !kachelOnFlag )
           {
             //plan immediately on
@@ -751,13 +752,15 @@ void PirHandler::handlePirActivity()
     {
       if (!humanPresentFlag)
       {
-        if ( (!pcMonitorsOnFlag) && pirMonitorsArmedFlag )
+        if ( (!pcMonitorsOnFlag) && pirArmedFlag )
         {
+        /*
           //first replan off, present or not
           timeoutTime = now() + (waitTime * 3); //minutes
           timeoutHour = hour(timeoutTime);
           timeoutMinute = minute(timeoutTime);
           pirControlCode = SLAAPK_BEELDSCH_UIT;
+        */  
 
           //plan immediately on
           pirControlCode = SLAAPK_BEELDSCH_AAN;
@@ -788,31 +791,40 @@ void PirHandler::handlePirActions()
   {
     Serial.println("Human activity in last minute");
 
-    //reschedule off actions
-    timeoutTime = now() + (waitTime * 3); //minutes
-    timeoutHour = hour(timeoutTime);
-    timeoutMinute = minute(timeoutTime);
-    pirControlCode = SLAAPK_BEELDSCH_UIT;
+    if ( pirArmedFlag )
+    {
+      if ( pcMonitorsOnFlag )
+      {
+        //reschedule off actions
+        timeoutTime = now() + (waitTime * 3); //minutes
+        timeoutHour = hour(timeoutTime);
+        timeoutMinute = minute(timeoutTime);
+        pirControlCode = SLAAPK_BEELDSCH_UIT;
+  
+        //pirControlCode = SLAAPK_BEELDSCH_AAN;
+  
+        timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+      }
+      if ( bureauLampOnFlag )
+      {
+  
+        timeoutTime = now() + (waitTime * 2); //minutes
+        timeoutHour = hour(timeoutTime);
+        timeoutMinute = minute(timeoutTime);
+        //timeoutList.listCommands();
+        pirControlCode = SLAAPK_BUROLAMP_UIT;
+        timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+        //timeoutList.listCommands();
+      }
+      if ( kachelOnFlag )
+      {
+        timeoutTime = now() + (waitTime * 20); //minutes
+        timeoutHour = hour(timeoutTime);
+        timeoutMinute = minute(timeoutTime);
+        pirControlCode = SLAAPK_KACHEL_UIT;
+        timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
+      }
 
-    //pirControlCode = SLAAPK_BEELDSCH_AAN;
-
-    timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
-
-    timeoutTime = now() + (waitTime * 2); //minutes
-    timeoutHour = hour(timeoutTime);
-    timeoutMinute = minute(timeoutTime);
-    //timeoutList.listCommands();
-    pirControlCode = SLAAPK_BUROLAMP_UIT;
-    timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
-    //timeoutList.listCommands();
-
-    if ( kachelOnFlag )
-     {
-       timeoutTime = now() + (waitTime * 20); //minutes
-       timeoutHour = hour(timeoutTime);
-       timeoutMinute = minute(timeoutTime);
-       pirControlCode = SLAAPK_KACHEL_UIT;
-       timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
     }
     activitySamples = 0;
   }
@@ -933,10 +945,13 @@ unsigned long processMessage(void) {
     if ( (*header == *commandHeaderUc) || (*header == *commandHeaderLc) )
     {
       controlCode = Serial.parseInt();
-      pirMonitorsArmedFlag = true;                //serial command means pc is on, monitors will be switched with pir
+      if ( (controlCode == SLAAPK_BEELDSCH_AAN) || (controlCode == SLAAPK_BUROLAMP_AAN) )    //serial command enabled PIR
+      {
+         pirArmedFlag = true;                //serial command means pc is on, monitors will be switched with pir
+      }
       if ( (controlCode == SLAAPK_BEELDSCH_UIT) || (controlCode == SLAAPK_BUROLAMP_UIT) )    //lamp off may be last, so do both
       {
-        pirMonitorsArmedFlag = false;                //serial command means pc will shut down soon
+        pirArmedFlag = false;                //serial command means pc will shut down soon
       }
     }
   }
