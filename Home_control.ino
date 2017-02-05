@@ -796,7 +796,7 @@ void PirHandler::handlePirActions()
       if ( pcMonitorsOnFlag )
       {
         //reschedule off actions
-        timeoutTime = now() + (waitTime * 3); //minutes
+        timeoutTime = now() + (waitTime * 5); //minutes
         timeoutHour = hour(timeoutTime);
         timeoutMinute = minute(timeoutTime);
         pirControlCode = SLAAPK_BEELDSCH_UIT;
@@ -808,7 +808,7 @@ void PirHandler::handlePirActions()
       if ( bureauLampOnFlag )
       {
   
-        timeoutTime = now() + (waitTime * 2); //minutes
+        timeoutTime = now() + (waitTime * 4); //minutes
         timeoutHour = hour(timeoutTime);
         timeoutMinute = minute(timeoutTime);
         //timeoutList.listCommands();
@@ -824,7 +824,6 @@ void PirHandler::handlePirActions()
         pirControlCode = SLAAPK_KACHEL_UIT;
         timeoutList.writeCommand(pirControlCode, timeoutHour, timeoutMinute);
       }
-
     }
     activitySamples = 0;
   }
