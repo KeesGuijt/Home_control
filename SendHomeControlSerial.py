@@ -17,7 +17,7 @@ locations=['COM11']
 
 for device in locations:  
          print "-Trying...",device  
-         arduino = serial.Serial(device, 9600)
+         arduino = serial.Serial(device, 115200)
          time.sleep(2)
          
          #Get the current PC time

@@ -37,15 +37,15 @@ unsigned long processMessage(void);
 
 bool bureauLampOnFlag = false;         //remember actual state of this device
 bool pcMonitorsOnFlag = false;         //remember actual state of this device
-bool kachelOnFlag = false;            //remember actual state of this device
+bool kachelOnFlag = false;             //remember actual state of this device
 bool tvOnFlag = false;                 //remember actual state of this device
 bool bovenViaPirDetected = false;      //set permanently if pir activitySamples >= 45) (meaning "this can only be upstairs unit, it is the only unit with a pir device")
-bool pirArmedFlag = false;     /*receiving any serial command means pc is on, monitors will be switched with pir; set pirArmedFlag
+bool pirArmedFlag = false;             //receiving any serial command means pc is on, monitors will be switched with pir; set pirArmedFlag
                                        //reset on SLAAPK_BEELDSCH_UIT || SLAAPK_BUROLAMP_UIT
                                        //pirArmedFlag only checked for "monitor on" actions.
                                        //it's purpose is preventing monitor on if pc is off.
                                        //active (mon on pir on) after upper macro button (>>|)
-                                       //inactive after lower macro button (|<<) */
+                                       //inactive after lower macro button (|<<)
 
 //////////////////////////////////////////////////////////////////////////////
 // Class definitions
@@ -836,7 +836,8 @@ void PirHandler::handlePirActions()
 
 
 void setup()    {
-  Serial.begin(9600);
+  //Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial) ; // Needed for Leonardo only
   pinMode(13, OUTPUT);
 
